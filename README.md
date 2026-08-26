@@ -66,3 +66,7 @@ environment wiring, and the same Doris FE/BE custom configuration
 (`disable_backend_black_list`, stream-load label retention,
 `autobucket_min_buckets`, `max_tablet_version_num`) — shipped here as
 ConfigMaps mounted through the Doris Operator.
+
+## License
+
+[MIT](LICENSE)
