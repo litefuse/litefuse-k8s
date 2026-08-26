@@ -1,3 +1,11 @@
-# Helm dependency archives (restored via `helm dependency update`)
-charts/litefuse/charts/*.tgz
+### Helm ###
+# Chart dependency archives (restored via `helm dependency update`)
+**/charts/*.tgz
+# helm-unittest snapshots
+**/tests/__snapshot__/
+
+### OS / editor noise ###
 .DS_Store
+.idea/
+.vscode/
+*.swp
