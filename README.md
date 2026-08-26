@@ -57,15 +57,6 @@ helm install litefuse charts/litefuse -n litefuse --create-namespace \
 
 See `charts/litefuse/README.md` for the full configuration reference.
 
-## Relationship to the docker-compose deployment
-
-The chart is the Kubernetes equivalent of the repo's `docker-compose.yml` /
-`docker-compose.cluster.yml`: the same `litefuse/litefuse-web` and
-`litefuse/litefuse-worker` images, the same `LITEFUSE_*` / `DORIS_*`
-environment wiring, and the same Doris FE/BE custom configuration
-(`disable_backend_black_list`, stream-load label retention,
-`autobucket_min_buckets`, `max_tablet_version_num`) — shipped here as
-ConfigMaps mounted through the Doris Operator.
 
 ## License
 
