@@ -1,0 +1,35 @@
+# Base values for testing Downward API functionality
+# Uses secure configurations for production-like testing
+litefuse:
+  salt:
+    secretKeyRef:
+      name: litefuse
+      key: salt
+  encryptionKey:
+    secretKeyRef:
+      name: litefuse
+      key: encryption-key
+  nextauth:
+    secret:
+      secretKeyRef:
+        name: litefuse
+        key: nextauth-secret
+    url: "http://localhost:3000"
+
+postgresql:
+  auth:
+    existingSecret: litefuse
+    secretKeys:
+      adminPasswordKey: postgresql-password
+      userPasswordKey: postgresql-password
+
+redis:
+  auth:
+    existingSecret: litefuse
+    existingSecretPasswordKey: redis-password
+
+s3:
+  auth:
+    existingSecret: litefuse
+    rootUserSecretKey: s3-user
+    rootPasswordSecretKey: s3-password

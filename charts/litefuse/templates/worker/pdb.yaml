@@ -1,0 +1,24 @@
+{{- if .Values.litefuse.worker.pdb.create }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "litefuse.fullname" . }}-worker-pdb
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "litefuse.labels" . | nindent 4 }}
+  {{- with (coalesce .Values.litefuse.worker.deployment.annotations .Values.litefuse.deployment.annotations) }}
+  annotations:
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if .Values.litefuse.worker.pdb.minAvailable }}
+  minAvailable: {{ .Values.litefuse.worker.pdb.minAvailable }}
+  {{- end  }}
+  {{- if or .Values.litefuse.worker.pdb.maxUnavailable (not .Values.litefuse.worker.pdb.minAvailable) }}
+  maxUnavailable: {{ .Values.litefuse.worker.pdb.maxUnavailable | default 1 }}
+  {{- end  }}
+  selector:
+    matchLabels:
+      {{- include "litefuse.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+{{- end }}

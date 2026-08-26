@@ -1,0 +1,23 @@
+{{- if .Values.litefuse.worker.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "litefuse.fullname" . }}-worker
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "litefuse.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "litefuse.fullname" . }}-worker
+  minReplicaCount: {{ .Values.litefuse.worker.keda.minReplicas }}
+  maxReplicaCount: {{ .Values.litefuse.worker.keda.maxReplicas }}
+  pollingInterval: {{ .Values.litefuse.worker.keda.pollingInterval }}
+  triggers:
+    - type: {{ .Values.litefuse.worker.keda.triggerType }}
+      metricType: {{ .Values.litefuse.worker.keda.metricType }}
+      metadata:
+        value: "{{ .Values.litefuse.worker.keda.value }}"
+        {{- if .Values.litefuse.worker.keda.containerName }}
+        containerName: "{{ .Values.litefuse.worker.keda.containerName }}"
+        {{- end }}
+{{- end }}

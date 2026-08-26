@@ -1,0 +1,68 @@
+suite: test DorisCluster CR rendering
+templates:
+  - doris/cluster.yaml
+tests:
+  - it: should render a DorisCluster with config-change auto-restart enabled by default
+    values:
+      - ../values.lint.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: DorisCluster
+      - isAPIVersion:
+          of: doris.selectdb.com/v1
+      - equal:
+          path: spec.enableRestartWhenConfigChange
+          value: true
+      - equal:
+          path: spec.feSpec.replicas
+          value: 1
+      - equal:
+          path: spec.beSpec.replicas
+          value: 1
+
+  - it: should reference the fe/be ConfigMaps via configMapInfo
+    values:
+      - ../values.lint.yaml
+    asserts:
+      - equal:
+          path: spec.feSpec.configMapInfo.configMapName
+          value: RELEASE-NAME-litefuse-doris-fe-config
+      - equal:
+          path: spec.beSpec.configMapInfo.configMapName
+          value: RELEASE-NAME-litefuse-doris-be-config
+
+  - it: should mount persistent volumes for FE meta and BE storage
+    values:
+      - ../values.lint.yaml
+    asserts:
+      - equal:
+          path: spec.feSpec.persistentVolumes[0].mountPath
+          value: /opt/apache-doris/fe/doris-meta
+      - equal:
+          path: spec.beSpec.persistentVolumes[0].mountPath
+          value: /opt/apache-doris/be/storage
+      - equal:
+          path: spec.beSpec.persistentVolumes[0].persistentVolumeClaimSpec.resources.requests.storage
+          value: 200Gi
+
+  - it: should allow disabling config-change auto-restart
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.cluster.enableRestartWhenConfigChange: false
+    asserts:
+      - equal:
+          path: spec.enableRestartWhenConfigChange
+          value: false
+
+  - it: should render no DorisCluster when doris.deploy is false
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.deploy: false
+      doris.host: external-doris
+    asserts:
+      - hasDocuments:
+          count: 0

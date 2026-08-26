@@ -1,0 +1,49 @@
+-------------------------------------------------------------------------------
+ Litefuse {{ .Chart.AppVersion }} has been deployed!
+-------------------------------------------------------------------------------
+
+Components:
+  - Web:    {{ include "litefuse.fullname" . }}-web ({{ .Values.litefuse.web.replicas | default .Values.litefuse.replicas }} replicas)
+  - Worker: {{ include "litefuse.fullname" . }}-worker ({{ .Values.litefuse.worker.replicas | default .Values.litefuse.replicas }} replicas)
+{{- if .Values.doris.deploy }}
+  - Doris:  DorisCluster/{{ include "litefuse.doris.clusterName" . }} (FE x{{ .Values.doris.cluster.fe.replicas }}, BE x{{ .Values.doris.cluster.be.replicas }}, managed by the Doris Operator)
+{{- else }}
+  - Doris:  external ({{ include "litefuse.doris.feHttpUrl" . }})
+{{- end }}
+{{- if .Values.postgresql.deploy }}
+  - PostgreSQL: {{ include "litefuse.postgresql.hostname" . }}
+{{- end }}
+{{- if .Values.redis.deploy }}
+  - Redis (Valkey): {{ include "litefuse.redis.hostname" . }}
+{{- end }}
+{{- if .Values.s3.deploy }}
+  - S3 (SeaweedFS): {{ include "litefuse.s3.endpoint" . }}
+{{- end }}
+
+{{ if .Values.litefuse.ingress.enabled -}}
+Access the UI via your ingress:
+{{- range .Values.litefuse.ingress.hosts }}
+  http{{ if $.Values.litefuse.ingress.tls.enabled }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else -}}
+Access the UI with a port-forward:
+
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "litefuse.fullname" . }}-web 3000:{{ .Values.litefuse.web.service.externalPort | default .Values.litefuse.web.service.port }}
+
+then open http://localhost:3000
+{{- end }}
+
+{{- if .Values.doris.deploy }}
+
+NOTE: On a fresh install the Doris FE/BE pods take a few minutes to form a
+cluster; the web/worker pods restart until the schema migrations succeed.
+Watch progress with:
+
+  kubectl get doriscluster -n {{ .Release.Namespace }} {{ include "litefuse.doris.clusterName" . }}
+  kubectl get pods -n {{ .Release.Namespace }} -w
+{{- end }}
+
+Secrets (SALT / ENCRYPTION_KEY / NEXTAUTH_SECRET) were auto-generated into
+the Secret "{{ include "litefuse.appSecretName" . }}" unless you provided
+them. They are kept across uninstalls (helm.sh/resource-policy: keep) —
+losing SALT or ENCRYPTION_KEY is unrecoverable.

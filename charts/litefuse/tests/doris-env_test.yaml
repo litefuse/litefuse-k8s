@@ -1,0 +1,158 @@
+suite: test Doris environment wiring
+templates:
+  - web/deployment.yaml
+  - worker/deployment.yaml
+tests:
+  - it: should point at the bundled FE service and derive replication from BE count
+    values:
+      - ../values.lint.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LITEFUSE_ANALYTICS_BACKEND
+            value: "doris"
+        template: web/deployment.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_FE_HTTP_URL
+            value: "http://RELEASE-NAME-litefuse-doris-fe-service:8030"
+        template: web/deployment.yaml
+      # single bundled BE -> tables must be created with 1 replica
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_REPLICATION_NUM
+            value: "1"
+        template: web/deployment.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LITEFUSE_AUTO_DORIS_MIGRATION_DISABLED
+            value: "false"
+        template: worker/deployment.yaml
+
+  - it: should cap derived replication at 3 for larger bundled BE counts
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.cluster.be.replicas: 5
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_REPLICATION_NUM
+            value: "3"
+        template: web/deployment.yaml
+
+  - it: should honor an explicit replicationNum
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.cluster.be.replicas: 3
+      doris.replicationNum: 2
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_REPLICATION_NUM
+            value: "2"
+        template: web/deployment.yaml
+
+  - it: should build the FE HTTP URL from an external host and default to replication 3
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.deploy: false
+      doris.operator.enabled: false
+      doris.host: my-doris.example.com
+      doris.auth.username: admin
+      doris.auth.password: secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_FE_HTTP_URL
+            value: "http://my-doris.example.com:8030"
+        template: web/deployment.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_USER
+            value: "admin"
+        template: web/deployment.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_REPLICATION_NUM
+            value: "3"
+        template: web/deployment.yaml
+
+  - it: should let doris.feHttpUrl override host:port for managed endpoints
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.deploy: false
+      doris.operator.enabled: false
+      doris.host: my-doris.example.com
+      doris.feHttpUrl: "http://my-doris.example.com:8080"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_FE_HTTP_URL
+            value: "http://my-doris.example.com:8080"
+        template: web/deployment.yaml
+
+  - it: should read the Doris password from an existing secret
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.deploy: false
+      doris.operator.enabled: false
+      doris.host: my-doris.example.com
+      doris.auth.existingSecret: doris-creds
+      doris.auth.existingSecretKey: password
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: doris-creds
+                key: password
+        template: web/deployment.yaml
+
+  - it: should emit no chart Doris env when DORIS_FE_HTTP_URL comes from additionalEnv
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.deploy: false
+      doris.operator.enabled: false
+      doris.host: ""
+      litefuse.additionalEnv:
+        - name: DORIS_FE_HTTP_URL
+          value: "http://byo-doris:8030"
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_DB
+            value: "litefuse"
+        template: web/deployment.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DORIS_FE_HTTP_URL
+            value: "http://byo-doris:8030"
+        template: web/deployment.yaml
+      # OTel batching tuning is app config, not Doris connection config — it
+      # must survive an additionalEnv takeover of the Doris settings.
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LITEFUSE_OTEL_GROUP_MAX_FILES
+            value: "1000"
+        template: worker/deployment.yaml

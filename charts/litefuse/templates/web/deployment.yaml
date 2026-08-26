@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "litefuse.fullname" . }}-web
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "litefuse.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+    {{- with .Values.litefuse.web.deployment.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with (coalesce .Values.litefuse.web.deployment.annotations .Values.litefuse.deployment.annotations) }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if not (or .Values.litefuse.web.hpa.enabled .Values.litefuse.web.keda.enabled) }}
+  replicas: {{ .Values.litefuse.web.replicas | default .Values.litefuse.replicas }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.litefuse.web.revisionHistoryLimit | default .Values.litefuse.revisionHistoryLimit }}
+  {{- with (coalesce .Values.litefuse.web.deployment.strategy .Values.litefuse.deployment.strategy) }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "litefuse.selectorLabels" . | nindent 6 }}
+      app: web
+  template:
+    metadata:
+      {{- $podAnnotations := merge (.Values.litefuse.web.pod.annotations | default dict) (.Values.litefuse.pod.annotations | default dict) }}
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "litefuse.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: web
+        app: web
+        {{- $podLabels := merge (.Values.litefuse.web.pod.labels | default dict) (.Values.litefuse.pod.labels | default dict) }}
+        {{- with $podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- if .Values.litefuse.web.hostAliases }}
+      hostAliases:
+        {{- toYaml .Values.litefuse.web.hostAliases | nindent 8 }}
+      {{- end }}
+      {{- with (.Values.litefuse.web.image.pullSecrets | default .Values.litefuse.image.pullSecrets) }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "litefuse.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.litefuse.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.litefuse.podSecurityContext | nindent 8 }}
+      {{- if .Values.litefuse.extraInitContainers }}
+      initContainers:
+        {{- toYaml .Values.litefuse.extraInitContainers | nindent 8 }}
+      {{- end }}
+      {{- if .Values.litefuse.extraVolumes }}
+      volumes:
+        {{- toYaml .Values.litefuse.extraVolumes | nindent 8 }}
+      {{- end }}
+      containers:
+        {{- $additionalContainers := concat (.Values.litefuse.extraContainers | default list ) (.Values.litefuse.web.pod.extraContainers | default list )}}
+        {{- with $additionalContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        - name: {{ .Chart.Name }}-web
+          securityContext:
+            {{- toYaml .Values.litefuse.securityContext | nindent 12 }}
+          image: "{{ .Values.litefuse.web.image.repository }}:{{ coalesce .Values.litefuse.web.image.tag .Values.litefuse.image.tag .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.litefuse.web.image.pullPolicy | default .Values.litefuse.image.pullPolicy }}
+          env:
+            {{- include "litefuse.commonEnv" . | nindent 12 }}
+            - name: PORT
+              value: {{ .Values.litefuse.web.service.port | quote }}
+            {{- $additionalEnv := concat (.Values.litefuse.additionalEnv | default list ) (.Values.litefuse.web.pod.additionalEnv | default list )}}
+            {{- if not (include "litefuse.getEnvVar" (dict "env" $additionalEnv "name" "HOSTNAME")) }}
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            {{- end }}
+            {{- with $additionalEnv }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- $additionalEnvFrom := concat (.Values.litefuse.additionalEnvFrom | default list ) (.Values.litefuse.web.pod.additionalEnvFrom | default list )}}
+          {{- with $additionalEnvFrom }}
+          envFrom:
+            {{ toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.litefuse.web.service.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.litefuse.web.livenessProbe.path | default "/api/public/health" }}
+              port: http
+            initialDelaySeconds: {{ .Values.litefuse.web.livenessProbe.initialDelaySeconds | default 20 }}
+            periodSeconds: {{ .Values.litefuse.web.livenessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.litefuse.web.livenessProbe.timeoutSeconds | default 5 }}
+            successThreshold: {{ .Values.litefuse.web.livenessProbe.successThreshold | default 1 }}
+            failureThreshold: {{ .Values.litefuse.web.livenessProbe.failureThreshold | default 5 }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.litefuse.web.readinessProbe.path | default "/api/public/ready" }}
+              port: http
+            initialDelaySeconds: {{ .Values.litefuse.web.readinessProbe.initialDelaySeconds | default 20 }}
+            periodSeconds: {{ .Values.litefuse.web.readinessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.litefuse.web.readinessProbe.timeoutSeconds | default 5 }}
+            successThreshold: {{ .Values.litefuse.web.readinessProbe.successThreshold | default 1 }}
+            failureThreshold: {{ .Values.litefuse.web.readinessProbe.failureThreshold | default 5 }}
+          {{- if .Values.litefuse.extraLifecycle}}
+          lifecycle:
+            {{- with .Values.litefuse.extraLifecycle }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml (.Values.litefuse.web.resources | default .Values.litefuse.resources) | nindent 12 }}
+          {{- if .Values.litefuse.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml .Values.litefuse.extraVolumeMounts | nindent 12 }}
+          {{- end }}
+      {{- with (coalesce .Values.litefuse.web.pod.nodeSelector .Values.litefuse.nodeSelector) }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (coalesce .Values.litefuse.web.pod.affinity .Values.litefuse.affinity) }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (coalesce .Values.litefuse.web.pod.tolerations .Values.litefuse.tolerations) }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (coalesce .Values.litefuse.web.pod.topologySpreadConstraints .Values.litefuse.pod.topologySpreadConstraints) }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.litefuse.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

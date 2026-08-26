@@ -1,0 +1,52 @@
+suite: test Doris validations
+templates:
+  - validations.yaml
+tests:
+  - it: should require a host for an external Doris
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.deploy: false
+      doris.operator.enabled: false
+    asserts:
+      - failedTemplate:
+          errorPattern: "Doris host must be configured"
+
+  - it: should reject replicationNum above the bundled BE count
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.replicationNum: 3
+    asserts:
+      - failedTemplate:
+          errorPattern: "cannot exceed doris.cluster.be.replicas"
+
+  - it: should fail the CRD preflight when the operator CRD is absent
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.crdCheck: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "Doris Operator CRD not found"
+
+  - it: should pass the CRD preflight when the API version is available
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.crdCheck: true
+    capabilities:
+      apiVersions:
+        - doris.selectdb.com/v1/DorisCluster
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should reject fe replicas below 1
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.cluster.fe.replicas: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "doris.cluster.fe.replicas must be >= 1"

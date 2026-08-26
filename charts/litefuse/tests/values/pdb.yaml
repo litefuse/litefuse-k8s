@@ -1,0 +1,4 @@
+litefuse:
+  web:
+    pdb:
+      maxUnavailable: 2

@@ -1,0 +1,30 @@
+# Connect to an existing / managed Doris cluster (e.g. SelectDB Cloud or a
+# self-managed deployment) instead of running Doris inside Kubernetes.
+# PostgreSQL / Redis / S3 stay bundled here; disable them the same way
+# (<store>.deploy=false + connection fields) to go fully external.
+#
+#   helm install litefuse ./charts/litefuse -f examples/values-external-doris.yaml
+
+doris:
+  deploy: false
+  operator:
+    enabled: false
+
+  # CHANGEME: FE endpoint of your Doris cluster
+  host: my-doris-fe.example.com
+  httpPort: 8030
+  queryPort: 9030
+  # Managed offerings often expose HTTP on a non-default port; override the
+  # full URL when host:httpPort is not the HTTP endpoint:
+  # feHttpUrl: http://my-doris-fe.example.com:8080
+
+  database: litefuse
+
+  auth:
+    username: admin
+    # Prefer an existing Secret over an inline password:
+    existingSecret: my-doris-credentials
+    existingSecretKey: password
+
+  # External clusters usually have >= 3 BEs; keep the reliability default.
+  replicationNum: 3

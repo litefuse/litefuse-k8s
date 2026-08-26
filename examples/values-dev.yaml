@@ -1,0 +1,48 @@
+# Development / small-footprint install.
+# Everything bundled (Doris, PostgreSQL, Valkey, SeaweedFS), single replica,
+# reduced resources and volumes. Suitable for a laptop cluster (kind/minikube)
+# or a small shared dev cluster.
+#
+#   helm install litefuse ./charts/litefuse -f examples/values-dev.yaml
+
+litefuse:
+  nextauth:
+    url: http://localhost:3000
+
+doris:
+  cluster:
+    fe:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 1
+          memory: 2Gi
+        limits:
+          cpu: 2
+          memory: 4Gi
+      # 2G heap + ~2G headroom fits the 4Gi limit (image default 8192m would
+      # be OOMKilled).
+      jvmHeapMb: 2048
+    be:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 1
+          memory: 4Gi
+        limits:
+          cpu: 4
+          memory: 8Gi
+    persistence:
+      fe:
+        size: 10Gi
+      be:
+        size: 50Gi
+
+postgresql:
+  storage:
+    requestedSize: 10Gi
+
+s3:
+  allInOne:
+    data:
+      size: 20Gi

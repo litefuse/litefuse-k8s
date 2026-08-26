@@ -1,0 +1,65 @@
+suite: test Doris fe.conf/be.conf ConfigMap rendering
+templates:
+  - doris/configmap.yaml
+tests:
+  - it: should size the FE JVM heap from jvmHeapMb inside a full fe.conf
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.cluster.fe.jvmHeapMb: 2048
+    asserts:
+      - matchRegex:
+          path: data["fe.conf"]
+          pattern: "-Xmx2048m -Xms2048m"
+        documentIndex: 0
+
+  - it: should keep enable_fqdn_mode in fe.conf (required by the operator)
+    values:
+      - ../values.lint.yaml
+    asserts:
+      - matchRegex:
+          path: data["fe.conf"]
+          pattern: "enable_fqdn_mode = true"
+        documentIndex: 0
+
+  # The operator's auto-restart hash only covers the main fe.conf/be.conf key,
+  # so chart-managed tuning MUST be merged into it — a separate *_custom.conf
+  # would change without triggering a rolling restart.
+  - it: should merge doris.cluster.fe.config into fe.conf, not a fe_custom.conf key
+    values:
+      - ../values.lint.yaml
+    asserts:
+      - matchRegex:
+          path: data["fe.conf"]
+          pattern: "autobucket_min_buckets = 10"
+        documentIndex: 0
+      - matchRegex:
+          path: data["fe.conf"]
+          pattern: "streaming_label_keep_max_second = 259200"
+        documentIndex: 0
+      - notExists:
+          path: data["fe_custom.conf"]
+        documentIndex: 0
+
+  - it: should merge doris.cluster.be.config into be.conf, not a be_custom.conf key
+    values:
+      - ../values.lint.yaml
+    asserts:
+      - matchRegex:
+          path: data["be.conf"]
+          pattern: "max_tablet_version_num = 5000"
+        documentIndex: 1
+      - notExists:
+          path: data["be_custom.conf"]
+        documentIndex: 1
+
+  - it: should fall back to the image default 8G heap when jvmHeapMb is null
+    values:
+      - ../values.lint.yaml
+    set:
+      doris.cluster.fe.jvmHeapMb: null
+    asserts:
+      - matchRegex:
+          path: data["fe.conf"]
+          pattern: "-Xmx8192m -Xms8192m"
+        documentIndex: 0

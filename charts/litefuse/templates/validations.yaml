@@ -1,0 +1,303 @@
+# Validate Litefuse Server settings
+{{- if not (has $.Values.litefuse.logging.level (list "trace" "debug" "info" "warn" "error" "fatal")) -}}
+    {{- fail "litefuse.logging.level must be one of: trace, debug, info, warn, error, fatal" -}}
+{{- end -}}
+{{- if not (has $.Values.litefuse.logging.format (list "text" "json")) -}}
+    {{- fail "litefuse.logging.format must be one of: text, json" -}}
+{{- end -}}
+
+# Reject configurations the bundled stores cannot provision.
+{{- if and .Values.redis.deploy (ne .Values.redis.auth.username "default") (not (hasKey (default dict .Values.redis.auth.aclUsers) .Values.redis.auth.username)) -}}
+    {{- fail (printf "redis.auth.username %q is not defined in redis.auth.aclUsers, so the bundled Valkey never creates it. Add it to redis.auth.aclUsers (with its password key in the ACL users Secret) or keep redis.auth.username=default." .Values.redis.auth.username) -}}
+{{- end -}}
+{{- if and .Values.doris.deploy (ne .Values.doris.auth.username "root") -}}
+    {{- fail "doris.auth.username must be \"root\" when doris.deploy is true: the bundled DorisCluster only provisions the built-in root user. Use a custom user only with an external Doris (doris.deploy=false)." -}}
+{{- end -}}
+{{- if .Values.s3.deploy -}}
+{{- $createNames := list -}}
+{{- range (((.Values.s3.allInOne).s3).createBuckets | default list) -}}
+  {{- $createNames = append $createNames .name -}}
+{{- end -}}
+{{- range $type := list "eventUpload" "batchExport" "mediaUpload" -}}
+{{- $cfg := index $.Values.s3 $type -}}
+{{- if or (eq $type "eventUpload") (eq $type "mediaUpload") $cfg.enabled -}}
+{{- $bucket := coalesce $cfg.bucket $.Values.s3.bucket $.Values.s3.defaultBuckets -}}
+{{- if and $bucket (not (has $bucket $createNames)) -}}
+    {{- fail (printf "s3.%s uses bucket %q, but the bundled SeaweedFS only creates the buckets listed in s3.allInOne.s3.createBuckets (%v). Add it there so uploads do not fail with NoSuchBucket at runtime." $type $bucket $createNames) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+# Validate bring-your-own auth Secrets against the bundled stores.
+# Setting <store>.auth.existingSecret suppresses the chart-managed Secret,
+# but the sub-charts keep mounting whatever name their pass-through values
+# hold — left at the default, that Secret would no longer exist and the
+# store pods fail at start with no render-time hint.
+{{- if and .Values.postgresql.deploy .Values.postgresql.auth.existingSecret (eq (include "litefuse.postgresql.authSecretName" .) "litefuse-postgresql-auth") (ne .Values.postgresql.auth.existingSecret "litefuse-postgresql-auth") -}}
+    {{- fail "postgresql.auth.existingSecret suppresses the chart-managed litefuse-postgresql-auth Secret, but the Postgres sub-chart still mounts it. Also point postgresql.settings.existingSecret and postgresql.userDatabase.existingSecret at a Secret with POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB/USERDB_USER/USERDB_PASSWORD keys, or unset postgresql.auth.existingSecret to let the chart manage credentials." -}}
+{{- end -}}
+{{- if and .Values.redis.deploy .Values.redis.auth.existingSecret (eq (include "litefuse.redis.authSecretName" .) "litefuse-redis-auth") (ne .Values.redis.auth.existingSecret "litefuse-redis-auth") -}}
+    {{- fail "redis.auth.existingSecret suppresses the chart-managed litefuse-redis-auth Secret, but the Valkey sub-chart still mounts it for ACL users. Also point redis.auth.usersExistingSecret at a Secret holding one key per ACL username, or unset redis.auth.existingSecret to let the chart manage credentials." -}}
+{{- end -}}
+{{- if and .Values.s3.deploy .Values.s3.auth.existingSecret (eq (include "litefuse.s3.authSecretName" .) "litefuse-s3-auth") (ne .Values.s3.auth.existingSecret "litefuse-s3-auth") -}}
+    {{- fail "s3.auth.existingSecret suppresses the chart-managed litefuse-s3-auth Secret, but the SeaweedFS sub-chart still mounts it as its IAM config. Also point s3.allInOne.s3.existingConfigSecret at a Secret with a seaweedfs_s3_config key matching your credentials, or unset s3.auth.existingSecret to let the chart manage credentials." -}}
+{{- end -}}
+
+# Validate auth providers settings
+{{- if and (hasKey .Values.litefuse "auth") (hasKey .Values.litefuse.auth "providers") }}
+{{- range $providerName, $provider := .Values.litefuse.auth.providers -}}
+{{- if not (has ($providerName | snakecase | upper) (list "AUTH0" "COGNITO" "AZURE_AD" "GITHUB" "GITHUB_ENTERPRISE" "GITLAB" "GOOGLE" "KEYCLOAK" "OKTA" "WORKOS" "CUSTOM")) -}}
+  {{- fail (printf "litefuse.auth: invalid auth provider %s" $providerName)}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+# Validate Doris settings
+{{- if and (not $.Values.doris.deploy) (not $.Values.doris.host) (not $.Values.doris.feHttpUrl) (not (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "DORIS_FE_HTTP_URL"))) -}}
+    {{- fail "Doris host must be configured when using an external Doris cluster. Set doris.host (or doris.feHttpUrl) to continue." -}}
+{{- end -}}
+{{- if and $.Values.doris.deploy (lt (int $.Values.doris.cluster.fe.replicas) 1) -}}
+    {{- fail "doris.cluster.fe.replicas must be >= 1 when doris.deploy is true." -}}
+{{- end -}}
+{{- if and $.Values.doris.deploy (lt (int $.Values.doris.cluster.be.replicas) 1) -}}
+    {{- fail "doris.cluster.be.replicas must be >= 1 when doris.deploy is true." -}}
+{{- end -}}
+{{- if and $.Values.doris.deploy $.Values.doris.replicationNum (gt (int $.Values.doris.replicationNum) (int $.Values.doris.cluster.be.replicas)) -}}
+    {{- fail (printf "doris.replicationNum (%v) cannot exceed doris.cluster.be.replicas (%v): Doris refuses to create tables with more replicas than alive backends." $.Values.doris.replicationNum $.Values.doris.cluster.be.replicas) -}}
+{{- end -}}
+{{- if and $.Values.doris.deploy $.Values.doris.crdCheck -}}
+{{- if not ($.Capabilities.APIVersions.Has "doris.selectdb.com/v1/DorisCluster") -}}
+    {{- fail "Doris Operator CRD not found (doris.selectdb.com/v1/DorisCluster). Install the Doris Operator before installing this chart — the bundled dorisOperator dependency installs it, but CRDs from dependencies only register on install, so a first install into a fresh cluster may need `helm install` run once for the operator or `kubectl apply` of its CRDs first. To skip this check for offline rendering (helm template / GitOps diff), set doris.crdCheck=false or pass --api-versions doris.selectdb.com/v1/DorisCluster." -}}
+{{- end -}}
+{{- end -}}
+
+# Validate Redis settings
+{{- if and $.Values.redis.deploy (not (contains "maxmemory-policy noeviction" (default "" $.Values.redis.valkeyConfig))) -}}
+    {{- fail "Litefuse requires the bundled Valkey to run with `maxmemory-policy noeviction` (jobs are lost under eviction). Keep `maxmemory-policy noeviction` in redis.valkeyConfig — valkey.conf is the sub-chart's only config mechanism." -}}
+{{- end -}}
+
+{{- if and (not $.Values.redis.deploy) (not $.Values.redis.host) (not $.Values.redis.cluster.enabled) (not $.Values.redis.sentinel.enabled) (not (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "REDIS_CONNECTION_STRING"))) -}}
+    {{- fail "Redis host must be configured when using an external Redis instance. Set redis.host, enable redis.cluster.enabled, or enable redis.sentinel.enabled to continue." -}}
+{{- end -}}
+
+{{- if and $.Values.redis.host (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "REDIS_CONNECTION_STRING")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either redis configuration or litefuse.additionalEnv[name: REDIS_CONNECTION_STRING] to continue." -}}
+{{- end -}}
+
+# Validate Redis Cluster settings
+{{- if and $.Values.redis.cluster.enabled (eq (len $.Values.redis.cluster.nodes) 0) (not (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "REDIS_CLUSTER_NODES"))) -}}
+    {{- fail "Redis cluster nodes must be configured when cluster mode is enabled. Set redis.cluster.nodes or litefuse.additionalEnv[name: REDIS_CLUSTER_NODES] to continue." -}}
+{{- end -}}
+
+{{- if and $.Values.redis.cluster.nodes (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "REDIS_CLUSTER_NODES")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either redis.cluster.nodes or litefuse.additionalEnv[name: REDIS_CLUSTER_NODES] to continue." -}}
+{{- end -}}
+
+{{- if and $.Values.redis.deploy $.Values.redis.cluster.enabled -}}
+    {{- fail "Redis cluster mode cannot be used with deployed Redis (redis.deploy: true). The deployed Redis is standalone/sentinel architecture. Set redis.deploy to false and configure external Redis cluster nodes to continue." -}}
+{{- end -}}
+
+# Validate Redis Sentinel settings
+{{- if and $.Values.redis.sentinel.enabled $.Values.redis.cluster.enabled -}}
+    {{- fail "Redis sentinel mode and cluster mode cannot be enabled simultaneously. Disable one of redis.sentinel.enabled or redis.cluster.enabled to continue." -}}
+{{- end -}}
+
+{{- if and $.Values.redis.sentinel.enabled (not $.Values.redis.sentinel.masterName) (not (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "REDIS_SENTINEL_NODES"))) -}}
+    {{- fail "Redis sentinel master name must be configured when sentinel mode is enabled. Set redis.sentinel.masterName to continue." -}}
+{{- end -}}
+
+{{- if and $.Values.redis.sentinel.enabled (not $.Values.redis.sentinel.nodes) (not (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "REDIS_SENTINEL_NODES"))) -}}
+    {{- fail "Redis sentinel nodes must be configured when sentinel mode is enabled. Set redis.sentinel.nodes or litefuse.additionalEnv[name: REDIS_SENTINEL_NODES] to continue." -}}
+{{- end -}}
+
+{{- if and $.Values.redis.sentinel.nodes (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "REDIS_SENTINEL_NODES")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either redis.sentinel.nodes or litefuse.additionalEnv[name: REDIS_SENTINEL_NODES] to continue." -}}
+{{- end -}}
+
+{{- if and $.Values.redis.deploy $.Values.redis.sentinel.enabled -}}
+    {{- fail "Redis sentinel mode cannot be used with deployed Redis (redis.deploy: true). Set redis.deploy to false and configure external Redis sentinel nodes to continue." -}}
+{{- end -}}
+
+# Validate S3 settings
+# Storage Provider
+{{- if not (has $.Values.s3.storageProvider (list "s3" "azure" "gcs")) -}}
+    {{- fail "s3.storageProvider must be one of: s3, azure, gcs" -}}
+{{- end -}}
+
+#   Event Upload
+{{- if and $.Values.s3.deploy (not (or $.Values.s3.forcePathStyle $.Values.s3.eventUpload.forcePathStyle)) -}}
+    {{- fail "Bundled SeaweedFS S3 gateway requires path-style addressing. Set s3.forcePathStyle or s3.eventUpload.forcePathStyle to true to continue." -}}
+{{- end -}}
+
+{{- if and (not $.Values.s3.deploy) (not (or $.Values.s3.bucket $.Values.s3.eventUpload.bucket)) -}}
+    {{- fail "S3 bucket must be configured for external provider. Set s3.bucket or s3.eventUpload.bucket to continue." -}}
+{{- end -}}
+
+#   Batch Export
+{{- if $.Values.s3.batchExport.enabled -}}
+{{- if and $.Values.s3.deploy (not (or $.Values.s3.forcePathStyle $.Values.s3.batchExport.forcePathStyle)) -}}
+    {{- fail "Bundled SeaweedFS S3 gateway requires path-style addressing. Set s3.forcePathStyle or s3.batchExport.forcePathStyle to true to continue." -}}
+{{- end -}}
+
+{{- if and (not $.Values.s3.deploy) (not (or $.Values.s3.bucket $.Values.s3.batchExport.bucket)) -}}
+    {{- fail "S3 bucket must be configured for external provider. Set s3.bucket or s3.batchExport.bucket to continue." -}}
+{{- end -}}
+{{- end -}}
+
+#   Media Upload
+{{- if $.Values.s3.mediaUpload.enabled -}}
+{{- if and $.Values.s3.deploy (not (or $.Values.s3.forcePathStyle $.Values.s3.mediaUpload.forcePathStyle)) -}}
+    {{- fail "Bundled SeaweedFS S3 gateway requires path-style addressing. Set s3.forcePathStyle or s3.mediaUpload.forcePathStyle to true to continue." -}}
+{{- end -}}
+
+{{- if and (not $.Values.s3.deploy) (not (or $.Values.s3.bucket $.Values.s3.mediaUpload.bucket)) -}}
+    {{- fail "S3 bucket must be configured for external provider. Set s3.bucket or s3.mediaUpload.bucket to continue." -}}
+{{- end -}}
+{{- end -}}
+
+# Validate that only one of additionalEnv or new structure is configured for PostgreSQL
+{{- if and $.Values.postgresql.host (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "DATABASE_HOST")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either postgresql.host or litefuse.additionalEnv[name: DATABASE_HOST] to continue." -}}
+{{- end -}}
+{{- if and $.Values.postgresql.auth.username (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "DATABASE_USERNAME")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either postgresql.auth.username or litefuse.additionalEnv[name: DATABASE_USERNAME] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.postgresql.auth.password $.Values.postgresql.auth.existingSecret) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "DATABASE_PASSWORD")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either postgresql.auth.password/existingSecret or litefuse.additionalEnv[name: DATABASE_PASSWORD] to continue." -}}
+{{- end -}}
+{{- if and $.Values.postgresql.auth.database (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "DATABASE_NAME")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either postgresql.auth.database or litefuse.additionalEnv[name: DATABASE_NAME] to continue." -}}
+{{- end -}}
+
+# Validate that only one of additionalEnv or new structure is configured for Doris
+{{- if and (or $.Values.doris.host $.Values.doris.feHttpUrl) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "DORIS_FE_HTTP_URL")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either doris configuration or litefuse.additionalEnv[name: DORIS_FE_HTTP_URL] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.doris.auth.password $.Values.doris.auth.existingSecret) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "DORIS_PASSWORD")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either doris.auth.password/existingSecret or litefuse.additionalEnv[name: DORIS_PASSWORD] to continue." -}}
+{{- end -}}
+
+# Validate that only one of additionalEnv or new structure is configured for S3/MinIO
+## Event Upload - Check both specific and global settings
+{{- if and (or $.Values.s3.eventUpload.bucket $.Values.s3.bucket) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_EVENT_UPLOAD_BUCKET")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[eventUpload.]bucket or litefuse.additionalEnv[name: LITEFUSE_S3_EVENT_UPLOAD_BUCKET] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.s3.eventUpload.region $.Values.s3.region) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_EVENT_UPLOAD_REGION")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[eventUpload.]region or litefuse.additionalEnv[name: LITEFUSE_S3_EVENT_UPLOAD_REGION] to continue." -}}
+{{- end -}}
+{{- if and (or (or $.Values.s3.eventUpload.accessKeyId.value $.Values.s3.eventUpload.accessKeyId.secretKeyRef.name) (or $.Values.s3.accessKeyId.value $.Values.s3.accessKeyId.secretKeyRef.name)) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[eventUpload.]accessKeyId or litefuse.additionalEnv[name: LITEFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID] to continue." -}}
+{{- end -}}
+{{- if and (or (or $.Values.s3.eventUpload.secretAccessKey.value $.Values.s3.eventUpload.secretAccessKey.secretKeyRef.name) (or $.Values.s3.secretAccessKey.value $.Values.s3.secretAccessKey.secretKeyRef.name)) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[eventUpload.]secretAccessKey or litefuse.additionalEnv[name: LITEFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.s3.eventUpload.endpoint $.Values.s3.endpoint) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_EVENT_UPLOAD_ENDPOINT")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[eventUpload.]endpoint or litefuse.additionalEnv[name: LITEFUSE_S3_EVENT_UPLOAD_ENDPOINT] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.s3.eventUpload.forcePathStyle $.Values.s3.forcePathStyle) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[eventUpload.]forcePathStyle or litefuse.additionalEnv[name: LITEFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE] to continue." -}}
+{{- end -}}
+
+## Batch Export - Check both specific and global settings
+{{- if and (or $.Values.s3.batchExport.bucket $.Values.s3.bucket) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_BATCH_EXPORT_BUCKET")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[batchExport.]bucket or litefuse.additionalEnv[name: LITEFUSE_S3_BATCH_EXPORT_BUCKET] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.s3.batchExport.region $.Values.s3.region) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_BATCH_EXPORT_REGION")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[batchExport.]region or litefuse.additionalEnv[name: LITEFUSE_S3_BATCH_EXPORT_REGION] to continue." -}}
+{{- end -}}
+{{- if and (or (or $.Values.s3.batchExport.accessKeyId.value $.Values.s3.batchExport.accessKeyId.secretKeyRef.name) (or $.Values.s3.accessKeyId.value $.Values.s3.accessKeyId.secretKeyRef.name)) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[batchExport.]accessKeyId or litefuse.additionalEnv[name: LITEFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID] to continue." -}}
+{{- end -}}
+{{- if and (or (or $.Values.s3.batchExport.secretAccessKey.value $.Values.s3.batchExport.secretAccessKey.secretKeyRef.name) (or $.Values.s3.secretAccessKey.value $.Values.s3.secretAccessKey.secretKeyRef.name)) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[batchExport.]secretAccessKey or litefuse.additionalEnv[name: LITEFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.s3.batchExport.endpoint $.Values.s3.endpoint) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_BATCH_EXPORT_ENDPOINT")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[batchExport.]endpoint or litefuse.additionalEnv[name: LITEFUSE_S3_BATCH_EXPORT_ENDPOINT] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.s3.batchExport.forcePathStyle $.Values.s3.forcePathStyle) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[batchExport.]forcePathStyle or litefuse.additionalEnv[name: LITEFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE] to continue." -}}
+{{- end -}}
+
+## Media Upload - Check both specific and global settings
+{{- if and (or $.Values.s3.mediaUpload.bucket $.Values.s3.bucket) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_MEDIA_UPLOAD_BUCKET")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[mediaUpload.]bucket or litefuse.additionalEnv[name: LITEFUSE_S3_MEDIA_UPLOAD_BUCKET] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.s3.mediaUpload.region $.Values.s3.region) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_MEDIA_UPLOAD_REGION")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[mediaUpload.]region or litefuse.additionalEnv[name: LITEFUSE_S3_MEDIA_UPLOAD_REGION] to continue." -}}
+{{- end -}}
+{{- if and (or (or $.Values.s3.mediaUpload.accessKeyId.value $.Values.s3.mediaUpload.accessKeyId.secretKeyRef.name) (or $.Values.s3.accessKeyId.value $.Values.s3.accessKeyId.secretKeyRef.name)) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[mediaUpload.]accessKeyId or litefuse.additionalEnv[name: LITEFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID] to continue." -}}
+{{- end -}}
+{{- if and (or (or $.Values.s3.mediaUpload.secretAccessKey.value $.Values.s3.mediaUpload.secretAccessKey.secretKeyRef.name) (or $.Values.s3.secretAccessKey.value $.Values.s3.secretAccessKey.secretKeyRef.name)) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[mediaUpload.]secretAccessKey or litefuse.additionalEnv[name: LITEFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.s3.mediaUpload.endpoint $.Values.s3.endpoint) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_MEDIA_UPLOAD_ENDPOINT")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[mediaUpload.]endpoint or litefuse.additionalEnv[name: LITEFUSE_S3_MEDIA_UPLOAD_ENDPOINT] to continue." -}}
+{{- end -}}
+{{- if and (or $.Values.s3.mediaUpload.forcePathStyle $.Values.s3.forcePathStyle) (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either s3.[mediaUpload.]forcePathStyle or litefuse.additionalEnv[name: LITEFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE] to continue." -}}
+{{- end -}}
+
+# Validate that only one of additionalEnv or new structure is configured for Feature Flags
+{{- if and $.Values.litefuse.features.telemetryEnabled (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "TELEMETRY_ENABLED")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either litefuse.features.telemetryEnabled or litefuse.additionalEnv[name: TELEMETRY_ENABLED] to continue." -}}
+{{- end -}}
+{{- if and $.Values.litefuse.features.signUpDisabled (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "AUTH_DISABLE_SIGNUP")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either litefuse.features.signUpDisabled or litefuse.additionalEnv[name: AUTH_DISABLE_SIGNUP] to continue." -}}
+{{- end -}}
+{{- if and $.Values.litefuse.features.experimentalFeaturesEnabled (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_ENABLE_EXPERIMENTAL_FEATURES")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either litefuse.features.experimentalFeaturesEnabled or litefuse.additionalEnv[name: LITEFUSE_ENABLE_EXPERIMENTAL_FEATURES] to continue." -}}
+{{- end -}}
+
+# Validate that only one of additionalEnv or new structure is configured for SMTP config
+{{- if and $.Values.litefuse.smtp.connectionUrl (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "SMTP_CONNECTION_URL")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either litefuse.smtp.connectionUrl or litefuse.additionalEnv[name: SMTP_CONNECTION_URL] to continue." -}}
+{{- end -}}
+{{- if and $.Values.litefuse.smtp.fromAddress (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "EMAIL_FROM_ADDRESS")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either litefuse.smtp.fromAddress or litefuse.additionalEnv[name: EMAIL_FROM_ADDRESS] to continue." -}}
+{{- end -}}
+
+# Validate that only one of additionalEnv or new structure is configured for Allowed Organization Creators
+{{- if and $.Values.litefuse.allowedOrganizationCreators (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "LITEFUSE_ALLOWED_ORGANIZATION_CREATORS")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either litefuse.allowedOrganizationCreators or litefuse.additionalEnv[name: LITEFUSE_ALLOWED_ORGANIZATION_CREATORS] to continue." -}}
+{{- end -}}
+
+# Validate that only one of additionalEnv or new structure is configured for Authentication and Security
+{{- if and $.Values.litefuse.salt (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "SALT")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either litefuse.salt or litefuse.additionalEnv[name: SALT] to continue." -}}
+{{- end -}}
+{{- if and $.Values.litefuse.encryptionKey (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "ENCRYPTION_KEY")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either litefuse.encryptionKey or litefuse.additionalEnv[name: ENCRYPTION_KEY] to continue." -}}
+{{- end -}}
+{{- if and $.Values.litefuse.nextauth.secret (include "litefuse.getEnvVar" (dict "env" $.Values.litefuse.additionalEnv "name" "NEXTAUTH_SECRET")) -}}
+    {{- fail "Only one of additionalEnv or the new structure can be configured. Set either litefuse.nextauth.secret or litefuse.additionalEnv[name: NEXTAUTH_SECRET] to continue." -}}
+{{- end -}}
+
+# Validate scaling configurations
+{{- if and $.Values.litefuse.web.keda.enabled (or $.Values.litefuse.web.hpa.enabled $.Values.litefuse.web.vpa.enabled) -}}
+    {{- fail "If keda is enabled for web component, you cannot enable hpa or vpa. Please disable either keda or both hpa and vpa." -}}
+{{- end -}}
+
+{{- if and $.Values.litefuse.worker.keda.enabled (or $.Values.litefuse.worker.hpa.enabled $.Values.litefuse.worker.vpa.enabled) -}}
+    {{- fail "If keda is enabled for worker component, you cannot enable hpa or vpa. Please disable either keda or both hpa and vpa." -}}
+{{- end -}}
+
+# Validate Pod Disruption Budget settings
+{{- $webPdb := default dict $.Values.litefuse.web.pdb -}}
+{{- $webMinAvailable := get $webPdb "minAvailable" -}}
+{{- $webMaxUnavailable := get $webPdb "maxUnavailable" -}}
+{{- $webMinAvailableSet := and (hasKey $webPdb "minAvailable") (ne (toString $webMinAvailable) "") (ne (printf "%v" $webMinAvailable) "<nil>") -}}
+{{- $webMaxUnavailableSet := and (hasKey $webPdb "maxUnavailable") (ne (toString $webMaxUnavailable) "") (ne (printf "%v" $webMaxUnavailable) "<nil>") -}}
+{{- if and $webPdb.create $webMinAvailableSet $webMaxUnavailableSet -}}
+    {{- fail "Pod Disruption Budget for web component cannot have both minAvailable and maxUnavailable values" -}}
+{{- end -}}
+
+{{- $workerPdb := default dict $.Values.litefuse.worker.pdb -}}
+{{- $workerMinAvailable := get $workerPdb "minAvailable" -}}
+{{- $workerMaxUnavailable := get $workerPdb "maxUnavailable" -}}
+{{- $workerMinAvailableSet := and (hasKey $workerPdb "minAvailable") (ne (toString $workerMinAvailable) "") (ne (printf "%v" $workerMinAvailable) "<nil>") -}}
+{{- $workerMaxUnavailableSet := and (hasKey $workerPdb "maxUnavailable") (ne (toString $workerMaxUnavailable) "") (ne (printf "%v" $workerMaxUnavailable) "<nil>") -}}
+{{- if and $workerPdb.create $workerMinAvailableSet $workerMaxUnavailableSet -}}
+    {{- fail "Pod Disruption Budget for worker component cannot have both minAvailable and maxUnavailable values" -}}
+{{- end -}}

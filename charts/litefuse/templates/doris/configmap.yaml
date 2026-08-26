@@ -1,0 +1,72 @@
+{{- /*
+Doris configuration for the bundled cluster. The operator mounts each
+ConfigMap under /etc/doris and soft-links the files into the component's
+conf/ directory.
+
+Everything is merged into the MAIN config file (fe.conf / be.conf) on
+purpose — the operator's config-change auto-restart hashes ONLY the
+resolveKey file (ResolveConfigMaps reads Data["fe.conf"]/["be.conf"]), so
+settings kept in a separate fe_custom.conf/be_custom.conf would change
+without triggering a rolling restart. The base content mirrors the
+apache/doris 4.0.6 image defaults; chart-managed tuning is appended below it.
+*/ -}}
+{{- if and .Values.doris.deploy (or .Values.doris.cluster.fe.config .Values.doris.cluster.fe.jvmHeapMb) }}
+{{- $feHeap := int (.Values.doris.cluster.fe.jvmHeapMb | default 8192) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "litefuse.doris.clusterName" . }}-fe-config
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "litefuse.labels" . | nindent 4 }}
+    app.kubernetes.io/component: doris
+data:
+  fe.conf: |
+    CUR_DATE=`date +%Y%m%d-%H%M%S`
+    LOG_DIR = ${DORIS_HOME}/log
+    JAVA_OPTS_FOR_JDK_17="-Dfile.encoding=UTF-8 -Djavax.security.auth.useSubjectCredsOnly=false -Xmx{{ $feHeap }}m -Xms{{ $feHeap }}m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$LOG_DIR -Xlog:gc*:$LOG_DIR/fe.gc.log.$CUR_DATE:time,uptime:filecount=10,filesize=50M -Darrow.enable_null_check_for_get=false --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/sun.nio.cs=ALL-UNNAMED --add-opens=java.base/sun.security.action=ALL-UNNAMED --add-opens=java.base/sun.util.calendar=ALL-UNNAMED --add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED --add-opens=java.management/sun.management=ALL-UNNAMED --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.xml/com.sun.org.apache.xerces.internal.jaxp=ALL-UNNAMED"
+    http_port = 8030
+    rpc_port = 9020
+    query_port = 9030
+    edit_log_port = 9010
+    arrow_flight_sql_port = 8070
+    sys_log_level = INFO
+    sys_log_mode = ASYNC
+    enable_fqdn_mode = true
+    {{- if .Values.doris.cluster.fe.config }}
+    # ---- chart-managed settings (doris.cluster.fe.config) ----
+    {{- .Values.doris.cluster.fe.config | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- if and .Values.doris.deploy .Values.doris.cluster.be.config }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "litefuse.doris.clusterName" . }}-be-config
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "litefuse.labels" . | nindent 4 }}
+    app.kubernetes.io/component: doris
+data:
+  be.conf: |
+    CUR_DATE=`date +%Y%m%d-%H%M%S`
+    LOG_DIR="${DORIS_HOME}/log/"
+    JAVA_OPTS_FOR_JDK_17="-Dfile.encoding=UTF-8 -Djol.skipHotspotSAAttach=true -Xmx2048m -DlogPath=$LOG_DIR/jni.log -Xlog:gc*:$LOG_DIR/be.gc.log.$CUR_DATE:time,uptime:filecount=10,filesize=50M -Djavax.security.auth.useSubjectCredsOnly=false -Dsun.security.krb5.debug=true -Dsun.java.command=DorisBE -XX:-CriticalJNINatives -XX:+IgnoreUnrecognizedVMOptions -Darrow.enable_null_check_for_get=false --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/sun.nio.cs=ALL-UNNAMED --add-opens=java.base/sun.security.action=ALL-UNNAMED --add-opens=java.base/sun.util.calendar=ALL-UNNAMED --add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED --add-opens=java.management/sun.management=ALL-UNNAMED --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.xml/com.sun.org.apache.xerces.internal.jaxp=ALL-UNNAMED"
+    JEMALLOC_CONF="percpu_arena:percpu,background_thread:true,metadata_thp:auto,muzzy_decay_ms:5000,dirty_decay_ms:5000,oversize_threshold:0,prof:true,prof_active:false,lg_prof_interval:-1,lg_extent_max_active_fit:8"
+    JEMALLOC_PROF_PRFIX="jemalloc_heap_profile_"
+    be_port = 9060
+    webserver_port = 8040
+    heartbeat_service_port = 9050
+    brpc_port = 8060
+    arrow_flight_sql_port = 8050
+    enable_https = false
+    ssl_certificate_path = "$DORIS_HOME/conf/cert.pem"
+    ssl_private_key_path = "$DORIS_HOME/conf/key.pem"
+    sys_log_level = INFO
+    aws_log_level = 2
+    azure_log_level = 4
+    AWS_EC2_METADATA_DISABLED=true
+    # ---- chart-managed settings (doris.cluster.be.config) ----
+    {{- .Values.doris.cluster.be.config | nindent 4 }}
+{{- end }}

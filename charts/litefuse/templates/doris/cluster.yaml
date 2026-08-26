@@ -1,0 +1,127 @@
+{{- /*
+DorisCluster CR — only created when the chart deploys the bundled Doris
+(doris.deploy=true). Requires the Doris Operator (bundled as the
+dorisOperator dependency, or pre-installed cluster-wide).
+
+The operator names the Services <clusterName>-fe-service /
+<clusterName>-be-service; the connection helpers in _helpers.tpl rely on
+that convention.
+*/ -}}
+{{- if .Values.doris.deploy }}
+apiVersion: doris.selectdb.com/v1
+kind: DorisCluster
+metadata:
+  name: {{ include "litefuse.doris.clusterName" . }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "litefuse.labels" . | nindent 4 }}
+    app.kubernetes.io/component: doris
+spec:
+  # Auto-restart FE/BE pods when their ConfigMap content changes. Without
+  # this the operator neither watches the ConfigMaps nor acts on the config
+  # hash it tracks — config edits silently require a manual pod restart.
+  enableRestartWhenConfigChange: {{ .Values.doris.cluster.enableRestartWhenConfigChange }}
+  # Frontend (FE) Specification
+  feSpec:
+    replicas: {{ .Values.doris.cluster.fe.replicas }}
+    image: {{ .Values.doris.cluster.fe.image }}
+    {{- if and .Values.litefuse.timezone (ne .Values.litefuse.timezone "UTC") }}
+    envVars:
+      - name: TZ
+        value: {{ .Values.litefuse.timezone | quote }}
+    {{- end }}
+    {{- if or .Values.doris.cluster.fe.config .Values.doris.cluster.fe.jvmHeapMb }}
+    configMapInfo:
+      configMapName: {{ include "litefuse.doris.clusterName" . }}-fe-config
+    {{- end }}
+    {{- with .Values.doris.cluster.fe.resources.requests }}
+    requests:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.doris.cluster.fe.resources.limits }}
+    limits:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.doris.cluster.fe.service }}
+    service:
+      type: {{ .type }}
+    {{- end }}
+    {{- with .Values.doris.cluster.fe.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.doris.cluster.fe.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.doris.cluster.fe.affinity }}
+    affinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if .Values.doris.cluster.persistence.enabled }}
+    persistentVolumes:
+      - mountPath: /opt/apache-doris/fe/doris-meta
+        name: fe-meta
+        persistentVolumeClaimSpec:
+          {{- if .Values.doris.cluster.persistence.storageClass }}
+          storageClassName: {{ .Values.doris.cluster.persistence.storageClass }}
+          {{- end }}
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: {{ .Values.doris.cluster.persistence.fe.size }}
+    {{- end }}
+
+  # Backend (BE) Specification
+  beSpec:
+    replicas: {{ .Values.doris.cluster.be.replicas }}
+    image: {{ .Values.doris.cluster.be.image }}
+    {{- if and .Values.litefuse.timezone (ne .Values.litefuse.timezone "UTC") }}
+    envVars:
+      - name: TZ
+        value: {{ .Values.litefuse.timezone | quote }}
+    {{- end }}
+    {{- if .Values.doris.cluster.be.config }}
+    configMapInfo:
+      configMapName: {{ include "litefuse.doris.clusterName" . }}-be-config
+    {{- end }}
+    {{- with .Values.doris.cluster.be.resources.requests }}
+    requests:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.doris.cluster.be.resources.limits }}
+    limits:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.doris.cluster.be.service }}
+    service:
+      type: {{ .type }}
+    {{- end }}
+    {{- with .Values.doris.cluster.be.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.doris.cluster.be.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.doris.cluster.be.affinity }}
+    affinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if .Values.doris.cluster.persistence.enabled }}
+    persistentVolumes:
+      - mountPath: /opt/apache-doris/be/storage
+        name: be-storage
+        persistentVolumeClaimSpec:
+          {{- if .Values.doris.cluster.persistence.storageClass }}
+          storageClassName: {{ .Values.doris.cluster.persistence.storageClass }}
+          {{- end }}
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: {{ .Values.doris.cluster.persistence.be.size }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,118 @@
+# Production-oriented install.
+# Mirrors the scaled docker-compose cluster topology: N web replicas behind
+# the Service, a larger worker pool, and an HA Doris cluster (3 FE / 3 BE,
+# replication 3). Pin your own secrets before installing — auto-generated
+# ones work but cannot be recovered from values later.
+#
+#   helm install litefuse ./charts/litefuse -f examples/values-production.yaml
+
+litefuse:
+  nextauth:
+    # CHANGEME: canonical external URL of the deployment
+    url: https://litefuse.example.com
+  # CHANGEME: pin credentials instead of relying on the generated Secret,
+  # especially under GitOps (helm template cannot see the cluster):
+  # salt:
+  #   secretKeyRef: { name: litefuse-app-credentials, key: salt }
+  # encryptionKey:
+  #   secretKeyRef: { name: litefuse-app-credentials, key: encryption-key }
+  # nextauth:
+  #   secret:
+  #     secretKeyRef: { name: litefuse-app-credentials, key: nextauth-secret }
+
+  features:
+    signUpDisabled: true
+
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      # SDK batch ingestion posts can be large
+      nginx.ingress.kubernetes.io/proxy-body-size: 100m
+    hosts:
+      - host: litefuse.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      enabled: true
+      secretName: litefuse-tls
+
+  # Each web/worker replica is one Node.js process (~1 core at saturation);
+  # scale out rather than up.
+  web:
+    replicas: 6
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+  worker:
+    replicas: 12
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+
+doris:
+  replicationNum: 3
+  cluster:
+    fe:
+      replicas: 3
+      resources:
+        requests:
+          cpu: 4
+          memory: 8Gi
+        limits:
+          cpu: 8
+          memory: 16Gi
+      # 8G heap (image default) + 8G headroom under the 16Gi limit. Mind
+      # label_num_threshold in fe config: 1M labels cost ~0.5-1G of this heap.
+      jvmHeapMb: 8192
+    be:
+      replicas: 3
+      resources:
+        requests:
+          cpu: 8
+          memory: 32Gi
+        limits:
+          cpu: 16
+          memory: 64Gi
+    persistence:
+      storageClass: ""
+      fe:
+        size: 50Gi
+      be:
+        size: 1Ti
+
+postgresql:
+  storage:
+    requestedSize: 100Gi
+  resources:
+    requests:
+      cpu: "2"
+      memory: 4Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+
+redis:
+  dataStorage:
+    requestedSize: 20Gi
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+s3:
+  allInOne:
+    data:
+      size: 500Gi

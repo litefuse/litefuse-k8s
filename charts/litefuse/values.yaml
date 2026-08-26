@@ -1,0 +1,1051 @@
+# Litefuse Helm Chart Configuration
+
+# -- Override the name for the selector labels, defaults to the chart name
+nameOverride: ""
+
+# -- Override the full name of the deployed resources, defaults to a combination of the release name and the name for the selector labels
+fullnameOverride: ""
+
+# Core Litefuse Configuration
+litefuse:
+  # Logging configuration
+  logging:
+    # -- Set the log level for the application (trace, debug, info, warn, error, fatal)
+    level: info
+    # -- Set the log format for the application (text or json)
+    format: text
+
+  # -- Timezone for the whole stack (litefuse pods and the bundled Doris).
+  # Keep UTC: Doris date partitioning and the app's time handling assume it.
+  timezone: UTC
+
+  # -- Salt used to hash API keys. Leave empty to auto-generate on first install (persisted in `<release>-app`); override with value/secretKeyRef to pin. Generate via `openssl rand -base64 32`.
+  salt:
+    value: ""
+    secretKeyRef:
+      name: ""
+      key: ""
+
+  # -- EE: Litefuse allowed organization creators.
+  allowedOrganizationCreators: []
+
+  # Authentication and SSO settings.
+  # Set auth.disableUsernamePassword to true to disable username/password login. Provider options use
+  # the last part of the env var name in camelCase under auth.providers; prefer secretKeyRef for secrets.
+  # Example (Azure AD):
+  # auth:
+  #   disableUsernamePassword: true
+  #   providers:
+  #     azureAd:
+  #       clientId: "<YOUR CLIENT ID>"
+  #       clientSecret:
+  #         secretKeyRef:
+  #           name: "my-sso-secret"
+  #           key: "azure-client-secret"
+  #       tenantId: "<YOUR TENANT ID>"
+
+  # -- Encryption key for sensitive data (256 bits / 64 hex chars). Leave empty to auto-generate on first install (persisted in `<release>-app`); override with value/secretKeyRef to pin. Generate via `openssl rand -hex 32`.
+  encryptionKey:
+    value: ""
+    secretKeyRef:
+      name: ""
+      key: ""
+
+  # Feature flags
+  features:
+    # -- Whether or not to report basic usage statistics to a centralized server.
+    telemetryEnabled: true
+    # -- Disable public sign up
+    signUpDisabled: false
+    # -- Enable experimental features
+    experimentalFeaturesEnabled: false
+    # -- Enable background migrations on worker startup
+    backgroundMigrationsEnabled: false
+
+  # OTel grouper (ingestion batching): a group ships when it hits targetBytes
+  # OR targetRows OR maxFiles, or when its oldest entry has waited flushMs.
+  # Bigger batches = higher throughput / lower Doris BE fan-out; flushMs bounds
+  # latency at low traffic. NOTE: keep maxFiles modest (1000) — a huge value
+  # makes a single cut scan a giant pending list and can stall shared Redis.
+  otelGroup:
+    targetBytes: 67108864
+    targetRows: 100000
+    maxFiles: 1000
+    flushMs: 1000
+
+  # -- Node.js environment to use for all litefuse deployments
+  nodeEnv: production
+
+  serviceAccount:
+    # -- Whether to create a service account for all litefuse deployments
+    create: true
+    # -- Annotations for the service account
+    annotations: {}
+    # -- Override the name of the service account to use, discovered automatically if not set
+    name: ""
+    # -- Whether to automount service account token in pods. Set to false to disable automatic mounting of the service account token.
+    automountServiceAccountToken: true
+
+  smtp:
+    # -- SMTP connection URL.
+    connectionUrl: ""
+    # -- From address for emails. Required if connectionUrl is set.
+    fromAddress: ""
+
+  ingress:
+    # -- Set to `true` to enable the ingress resource
+    enabled: false
+    # -- Additional labels for the ingress resource
+    additionalLabels: {}
+    # -- Annotations for the ingress resource
+    annotations: {}
+    # -- The class name for the ingress resource
+    className: ""
+    # -- The hosts for the ingress resource
+    hosts: []
+    # Example:
+    # - host: "litefuse.example.com"
+    #   paths:
+    #     - path: /
+    #       pathType: ImplementationSpecific
+
+    tls:
+      # -- Set to `true` to enable use HTTPS on the ingress
+      enabled: false
+      # -- The name of the secret to use for TLS Key
+      secretName: ""
+
+  # -- Pod security context for all litefuse deployments
+  podSecurityContext: {}
+  # -- Security context for all litefuse deployments
+  securityContext: {}
+  # -- Node selector for all litefuse deployments
+  nodeSelector: {}
+  # -- Tolerations for all litefuse deployments
+  tolerations: []
+  # -- Affinity for all litefuse deployments
+  affinity: {}
+  # -- DNS configuration for all litefuse deployments
+  dnsConfig: {}
+  pod:
+    # -- Annotations for all litefuse pods
+    annotations: {}
+    # -- Labels for all litefuse pods
+    labels: {}
+    # -- Topology spread constraints for all litefuse pods
+    topologySpreadConstraints: []
+  deployment:
+    # -- Annotations for all litefuse deployments
+    annotations: {}
+    # -- Deployment strategy for all litefuse deployments (can be overridden by individual deployments)
+    strategy: {}
+  # -- Number of replicas to use for all litefuse deployments. Can be overridden by the individual deployments
+  replicas: 1
+  # -- Number of old ReplicaSets to retain to allow rollback. Can be overridden by the individual deployments
+  revisionHistoryLimit: 10
+  # -- Resources for all litefuse deployments. Can be overridden by the individual deployments
+  resources: {}
+  image:
+    # -- The image tag to use for all litefuse deployments. Can be overridden by the individual deployments. Falls back to appVersion if not set.
+    tag: Null
+    # -- The pull policy to use for all litefuse deployments. Can be overridden by the individual deployments.
+    pullPolicy: Always
+    # -- The pull secrets to use for all litefuse deployments. Can be overridden by the individual deployments.
+    pullSecrets: []
+
+  # -- List of additional environment variables to be added to all litefuse deployments.
+  additionalEnv: []
+  # -- Secrets or ConfigMap of additional environment variables to be added to all litefuse deployments.
+  additionalEnvFrom: []
+  # -- Allows additional containers to be added to all litefuse deployments
+  extraContainers: []
+  # -- Allows additional volumes to be added to all litefuse deployments
+  extraVolumes: []
+  # -- Allows additional init containers to be added to all litefuse deployments
+  extraInitContainers: []
+  # -- Allows additional volume mounts to be added to all litefuse deployments
+  extraVolumeMounts: []
+
+  # -- Allows additional lifecycle hooks to be added to all litefuse deployments
+  extraLifecycle: {}
+
+  # Web deployment configuration
+  web:
+    image:
+      # -- The image repository to use for the litefuse web pods.
+      repository: litefuse/litefuse-web
+      # -- The tag to use for the litefuse web pods. Using `litefuse.image.tag` if not set.
+      tag: Null
+      # -- The pull policy to use for the litefuse web pods. Using `litefuse.image.pullPolicy` if not set.
+      pullPolicy: Null
+      # -- The pull secrets to use for the litefuse web pods. Using `litefuse.image.pullSecrets` if not set.
+      pullSecrets: Null
+    deployment:
+      # -- Additional labels for the litefuse web deployment
+      additionalLabels: {}
+      # -- Annotations for the web deployment
+      annotations: {}
+      # -- Deployment strategy for the web deployment. Overrides the global deployment strategy
+      strategy: {}
+    pod:
+      # -- Annotations for the web pods
+      annotations: {}
+      # -- Labels for the web pods
+      labels: {}
+      # -- Node selector for the web pods. Overrides the global nodeSelector
+      nodeSelector: null
+      # -- Tolerations for the web pods. Overrides the global tolerations
+      tolerations: null
+      # -- Affinity for the web pods. Overrides the global affinity
+      affinity: null
+      # -- Topology spread constraints for the web pods. Overrides the global topologySpreadConstraints
+      topologySpreadConstraints: null
+      # -- Allows additional containers to be added to all litefuse web pods
+      extraContainers: []
+      # -- List of additional environment variables to be added to all litefuse web pods.
+      additionalEnv: []
+      # -- Secrets or ConfigMap of additional environment variables to be added to all litefuse web pods.
+      additionalEnvFrom: []
+    service:
+      # -- The type of service to use for the litefuse web application
+      type: ClusterIP
+      # -- The port to use for the litefuse web application
+      port: 3000
+      # -- The external port that will be exposed by the service. Falls back to `port` if not set.
+      externalPort: null
+      # -- The node port to use for the litefuse web application
+      nodePort: null
+      # -- Additional labels for the litefuse web application service
+      additionalLabels: {}
+      # -- Annotations for the litefuse web application service
+      annotations: {}
+
+    # -- Resources for the litefuse web pods. Defaults to the global resources
+    resources: {}
+
+    # -- Number of replicas to use if HPA is not enabled. Defaults to the global replicas
+    replicas: null
+
+    # -- Number of old ReplicaSets to retain to allow rollback.
+    revisionHistoryLimit: null
+
+    # KEDA ScaledObject configuration
+    keda:
+      # -- Set to `true` to enable KEDA for the litefuse web pods
+      # Note: When both KEDA and HPA are enabled, the deployment will fail.
+      enabled: false
+      # -- The minimum number of replicas to use for the litefuse web pods
+      minReplicas: 1
+      # -- The maximum number of replicas to use for the litefuse web pods
+      maxReplicas: 2
+      # -- The polling interval in seconds for checking metrics
+      pollingInterval: 30
+      # -- The trigger type for scaling (cpu or memory)
+      triggerType: "cpu"
+      # -- The metric type for scaling (Utilization or AverageValue)
+      metricType: "Utilization"
+      # -- The target utilization percentage for the litefuse web pods
+      value: "50"
+      # -- Optional container name to target for metrics (leave empty to target all containers)
+      containerName: ""
+
+    # Horizontal Pod Autoscaler configuration
+    hpa:
+      # -- Set to `true` to enable HPA for the litefuse web pods
+      # Note: When both KEDA and HPA are enabled, the deployment will fail.
+      enabled: false
+      # -- Annotations for the litefuse web HPA
+      annotations: {}
+      # -- The minimum number of replicas to use for the litefuse web pods
+      minReplicas: 1
+      # -- The maximum number of replicas to use for the litefuse web pods
+      maxReplicas: 2
+      # -- The target CPU utilization percentage for the litefuse web pods
+      targetCPUUtilizationPercentage: 50
+
+    # Vertical Pod Autoscaler configuration
+    vpa:
+      # -- Set to `true` to enable VPA for the litefuse web pods
+      enabled: false
+      # -- The resources to control for the litefuse web pods
+      controlledResources: []
+      # -- The maximum allowed resources for the litefuse web pods
+      maxAllowed: {}
+      # -- The minimum allowed resources for the litefuse web pods
+      minAllowed: {}
+      updatePolicy:
+        # -- The update policy mode for the litefuse web pods
+        updateMode: Auto
+
+    # -- Adding records to /etc/hosts in the pod's network.
+    hostAliases: []
+
+    livenessProbe:
+      # -- Path to check for liveness.
+      path: "/api/public/health"
+      # -- Initial delay seconds for livenessProbe.
+      initialDelaySeconds: 20
+      # -- Period seconds for livenessProbe.
+      periodSeconds: 10
+      # -- Timeout seconds for livenessProbe.
+      timeoutSeconds: 5
+      # -- Failure threshold for livenessProbe.
+      failureThreshold: 3
+      # -- Success threshold for livenessProbe.
+      successThreshold: 1
+
+    readinessProbe:
+      # -- Path to check for readiness.
+      path: "/api/public/ready"
+      # -- Initial delay seconds for readinessProbe.
+      initialDelaySeconds: 20
+      # -- Period seconds for readinessProbe.
+      periodSeconds: 10
+      # -- Timeout seconds for readinessProbe.
+      timeoutSeconds: 5
+      # -- Failure threshold for readinessProbe.
+      failureThreshold: 3
+      # -- Success threshold for readinessProbe.
+      successThreshold: 1
+
+    # Pod Disruption Budget configuration for the web deployment
+    pdb:
+      # -- Set to `true` to create a Pod Disruption Budget for the litefuse web pods
+      create: true
+      # -- Minimum number of available pods during disruptions. Cannot be set simultaneously with maxUnavailable.
+      minAvailable: ""
+      # -- Maximum number of unavailable pods during disruptions. Cannot be set simultaneously with minAvailable. Defaults to 1 if neither is set.
+      maxUnavailable: ""
+
+  # Worker deployment configuration
+  worker:
+    # -- Adding records to /etc/hosts in the worker pod's network.
+    hostAliases: []
+    image:
+      # -- The image repository to use for the litefuse worker pods
+      repository: litefuse/litefuse-worker
+      # -- The tag to use for the litefuse worker pods. Using `litefuse.image.tag` if not set.
+      tag: Null
+      # -- The pull policy to use for the litefuse worker pods. Using `litefuse.image.pullPolicy` if not set.
+      pullPolicy: Null
+      # -- The pull secrets to use for the litefuse worker pods. Using `litefuse.image.pullSecrets` if not set.
+      pullSecrets: Null
+    deployment:
+      # -- Additional labels for the worker deployment
+      additionalLabels: {}
+      # -- Annotations for the worker deployment
+      annotations: {}
+      # -- Deployment strategy for the worker deployment. Overrides the global deployment strategy
+      strategy: {}
+    pod:
+      # -- Annotations for the worker pods
+      annotations: {}
+      # -- Labels for the worker pods
+      labels: {}
+      # -- Node selector for the worker pods. Overrides the global nodeSelector
+      nodeSelector: null
+      # -- Tolerations for the worker pods. Overrides the global tolerations
+      tolerations: null
+      # -- Affinity for the worker pods. Overrides the global affinity
+      affinity: null
+      # -- Topology spread constraints for the worker pods. Overrides the global topologySpreadConstraints
+      topologySpreadConstraints: null
+      # -- Allows additional containers to be added to all litefuse worker pods
+      extraContainers: []
+      # -- List of additional environment variables to be added to all litefuse worker pods.
+      additionalEnv: []
+      # -- Secrets or ConfigMap of additional environment variables to be added to all litefuse worker pods.
+      additionalEnvFrom: []
+    # -- Resources for the litefuse worker pods. Defaults to the global resources
+    resources: {}
+
+    # -- Number of replicas to use if HPA is not enabled. Defaults to the global replicas
+    replicas: null
+
+    # -- Number of old ReplicaSets to retain to allow rollback.
+    revisionHistoryLimit: null
+
+    # KEDA ScaledObject configuration
+    keda:
+      # -- Set to `true` to enable KEDA for the litefuse worker pods
+      # Note: When both KEDA and HPA are enabled, the deployment will fail.
+      enabled: false
+      # -- The minimum number of replicas to use for the litefuse worker pods
+      minReplicas: 1
+      # -- The maximum number of replicas to use for the litefuse worker pods
+      maxReplicas: 2
+      # -- The polling interval in seconds for checking metrics
+      pollingInterval: 30
+      # -- The trigger type for scaling (cpu or memory)
+      triggerType: "cpu"
+      # -- The metric type for scaling (Utilization or AverageValue)
+      metricType: "Utilization"
+      # -- The target utilization percentage for the litefuse worker pods
+      value: "50"
+      # -- Optional container name to target for metrics (leave empty to target all containers)
+      containerName: ""
+
+    # Horizontal Pod Autoscaler configuration
+    hpa:
+      # -- Set to `true` to enable HPA for the litefuse worker pods
+      # Note: When both KEDA and HPA are enabled, the deployment will fail.
+      enabled: false
+      # -- Annotations for the litefuse worker HPA
+      annotations: {}
+      # -- The minimum number of replicas to use for the litefuse worker pods
+      minReplicas: 1
+      # -- The maximum number of replicas to use for the litefuse worker pods
+      maxReplicas: 2
+      # -- The target CPU utilization percentage for the litefuse worker pods
+      targetCPUUtilizationPercentage: 50
+
+    # Vertical Pod Autoscaler configuration
+    vpa:
+      # -- Set to `true` to enable VPA for the litefuse worker pods
+      enabled: false
+      # -- The resources to control for the litefuse worker pods
+      controlledResources: []
+      # -- The maximum allowed resources for the litefuse worker pods
+      maxAllowed: {}
+      # -- The minimum allowed resources for the litefuse worker pods
+      minAllowed: {}
+      updatePolicy:
+        # -- The update policy mode for the litefuse worker pods
+        updateMode: Auto
+
+    # Pod Disruption Budget configuration for the worker deployment
+    pdb:
+      # -- Set to `true` to create a Pod Disruption Budget for the worker deployment
+      create: true
+      # -- Minimum number of available pods during disruptions. Cannot be set simultaneously with maxUnavailable.
+      minAvailable: ""
+      # -- Maximum number of unavailable pods during disruptions. Cannot be set simultaneously with minAvailable. Defaults to 1 if neither is set.
+      maxUnavailable: ""
+
+    livenessProbe:
+      # -- Initial delay seconds for livenessProbe.
+      initialDelaySeconds: 20
+      # -- Period seconds for livenessProbe.
+      periodSeconds: 10
+      # -- Timeout seconds for livenessProbe.
+      timeoutSeconds: 5
+      # -- Failure threshold for livenessProbe.
+      failureThreshold: 3
+      # -- Success threshold for livenessProbe.
+      successThreshold: 1
+
+  # NextAuth configuration
+  nextauth:
+    # -- When deploying to production, set the `nextauth.url` value to the canonical URL of your site.
+    url: http://localhost:3000
+    # -- NextAuth secret for JWT encryption and email token hashing. Leave empty to auto-generate on first install (persisted in `<release>-app`); override with value/secretKeyRef to pin.
+    secret:
+      value: ""
+      secretKeyRef:
+        name: ""
+        key: ""
+
+# PostgreSQL Configuration
+# Deploys a single-instance PostgreSQL via the groundhog2k/postgres sub-chart (image `docker.io/postgres`).
+# For HA / managed Postgres, set `postgresql.deploy: false` and configure `host` + auth fields below.
+postgresql:
+  # -- Deploy PostgreSQL via the bundled groundhog2k/postgres sub-chart. Disable to use an external or managed Postgres.
+  deploy: true
+
+  # -- PostgreSQL host to connect to. If postgresql.deploy is true, this will be set automatically based on the release name.
+  host: ""
+  # -- Port of the postgres server to use. Defaults to 5432.
+  port: null
+  # -- Additional database connection arguments
+  args: ""
+
+  # -- If `postgresql.deploy` is set to false, Connection string of your Postgres database used for database migrations. Use this if you want to use a different user for migrations or use connection pooling on DATABASE_URL. For large deployments, configure the database user with long timeouts as migrations might need a while to complete.
+  directUrl: ""
+
+  # -- If your database user lacks the CREATE DATABASE permission, you must create a shadow database and configure the "SHADOW_DATABASE_URL". This is often the case if you use a Cloud database. Refer to the Prisma docs for detailed instructions.
+  shadowDatabaseUrl: ""
+
+  # Authentication configuration (Litefuse-facing — these values are read by the chart's helpers
+  # to build DATABASE_USERNAME / DATABASE_PASSWORD / DATABASE_NAME for the litefuse pods).
+  auth:
+    # -- Username Litefuse uses to connect to PostgreSQL. Created automatically by the sub-chart when deploy is true.
+    username: litefuse
+    # -- Password Litefuse uses to connect to PostgreSQL. Leave empty to have the chart generate one (stored in a release-managed Secret).
+    password: ""
+    # -- If you want to use an existing secret for the postgres password, set the name of the secret here. (`postgresql.auth.password` will be ignored and picked up from this secret).
+    existingSecret: ""
+    # -- Keys in existingSecret: userPasswordKey for Litefuse; adminPasswordKey for the Postgres superuser when deploy is true.
+    secretKeys:
+      userPasswordKey: password
+      adminPasswordKey: postgres-password
+    # -- Database name Litefuse uses. Created automatically by the sub-chart when deploy is true.
+    database: litefuse
+    # -- Additional database connection arguments
+    args: ""
+
+  # Migration configuration
+  migration:
+    # -- Whether to run automatic migrations on startup
+    autoMigrate: true
+
+  # Sub-chart settings (groundhog2k/postgres) — passed through to the sub-chart.
+  # See https://artifacthub.io/packages/helm/groundhog2k/postgres for the full schema.
+  image:
+    # -- Postgres image. Defaults to the upstream Docker Hub image (Apache 2.0 / PostgreSQL license).
+    repository: postgres
+    tag: "17"
+    pullPolicy: IfNotPresent
+
+  # -- Number of replicas for the Postgres StatefulSet. Single-instance only — set to 0 to suspend.
+  replicaCount: 1
+
+  service:
+    type: ClusterIP
+    # -- Port the Postgres Service exposes. Must match `postgresql.port` (or the litefuse default 5432).
+    port: 5432
+
+  # -- PVC settings for the Postgres data volume.
+  storage:
+    # Size of the data PVC. Adjust based on expected trace + project volume.
+    requestedSize: 20Gi
+    # -- StorageClass name. Leave empty to use the cluster's default.
+    className: ""
+    # -- Keep the PVC after the release is uninstalled.
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+      whenScaled: Retain
+
+  # -- Pass-through Postgres settings for the groundhog2k sub-chart. Usually left alone; helpers wire the chart-managed Secret automatically.
+  settings:
+    # -- Postgres superuser password. Auto-derived from the chart-managed Secret unless existingSecret is set.
+    superuserPassword: {}
+    # -- Existing Secret for the superuser password (keys: POSTGRES_USER, POSTGRES_PASSWORD). Single source of truth for the chart-managed Secret's name — the chart creates the Secret under this exact name, so any release name works. Override it (together with userDatabase.existingSecret) when running two releases in one namespace.
+    existingSecret: "litefuse-postgresql-auth"
+
+  # -- Bootstrap the Litefuse database/user on first start. Empty name/user/password maps use defaults from auth.* via the chart-managed Secret.
+  userDatabase:
+    name: {}
+    user: {}
+    password: {}
+    # -- Existing Secret for userDatabase credentials (keys: USERDB_USER, USERDB_PASSWORD, POSTGRES_DB). Must match settings.existingSecret when the chart manages the Secret (validated at render time).
+    existingSecret: "litefuse-postgresql-auth"
+
+  # -- Resource limits/requests for the Postgres pod. Tune for your workload.
+  resources: {}
+    # limits:
+    #   cpu: 2000m
+    #   memory: 2Gi
+    # requests:
+    #   cpu: 500m
+    #   memory: 512Mi
+
+  # -- Node selector / tolerations / affinity for the Postgres pod.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # -- Pod security context.
+  podSecurityContext:
+    fsGroup: 999
+  # -- Container security context.
+  securityContext:
+    runAsUser: 999
+    runAsGroup: 999
+
+  # -- Liveness / readiness probe customisations (see groundhog2k/postgres docs).
+  livenessProbe: {}
+  readinessProbe: {}
+  startupProbe: {}
+
+# Key-Value Store / Redis Configuration
+# Deploys Valkey via the official valkey-io/valkey sub-chart (image `docker.io/valkey/valkey`).
+# For HA, point Litefuse at an external Redis/Valkey cluster (operator or managed service).
+redis:
+  # -- Deploy Valkey via the bundled valkey-io/valkey sub-chart. Disable to use an external Redis or Valkey.
+  deploy: true
+
+  # -- Redis host to connect to. If redis.deploy is true, this will be set automatically based on the release name.
+  host: ""
+  # -- Redis port to connect to.
+  port: 6379
+
+  # Redis TLS configuration
+  tls:
+    # -- Enable TLS for Litefuse↔Redis. When deploy is true, also enables TLS on the Valkey sub-chart.
+    enabled: false
+    # -- Path to the CA certificate file for TLS verification (mounted into Litefuse pods).
+    caPath: ""
+    # -- Path to the client certificate file for mutual TLS authentication.
+    certPath: ""
+    # -- Path to the client private key file for mutual TLS authentication.
+    keyPath: ""
+
+  # Authentication configuration. This block is dual-purpose:
+  #   1. Litefuse-facing — `username`, `password`, `existingSecret`, `existingSecretPasswordKey`,
+  #      `database` are consumed by the chart helpers to build REDIS_PASSWORD and the connection
+  #      string for the litefuse pods.
+  #   2. Sub-chart pass-through — `enabled`, `usersExistingSecret`, `aclUsers`, `aclConfig` are
+  #      consumed by the bundled valkey-io/valkey sub-chart (when `redis.deploy: true`). The
+  #      defaults below enable ACL auth, point Valkey at the chart-managed Secret
+  #      (`<release>-redis-auth`, generated by templates/redis-secret.yaml), and grant the
+  #      `default` user full permissions for the Litefuse application.
+  auth:
+    # -- Enable ACL-based authentication on the bundled Valkey sub-chart.
+    enabled: true
+    # -- Redis username Litefuse authenticates with. Set null to omit from the connection string; created as an ACL user when deploy is true.
+    username: "default"
+    # -- Redis password Litefuse authenticates with. Leave empty to auto-generate; set null to disable auth. URL-encode special characters.
+    password: ""
+    # -- Existing Secret holding the Redis password. When set, auth.password is ignored and the chart-managed Secret is not created.
+    existingSecret: ""
+    # -- The key in the existing secret that contains the password.
+    existingSecretPasswordKey: ""
+
+    database: 0
+
+    # -- Valkey ACL users Secret (one key per username). Single source of truth for the chart-managed Secret's name — the chart creates the Secret under this exact name, so any release name works. Override when running two releases in one namespace.
+    usersExistingSecret: "litefuse-redis-auth"
+    # -- Valkey ACL users to create. Must include "default" when auth.enabled is true; `~* &* +@all` grants full access.
+    aclUsers:
+      default:
+        permissions: "~* &* +@all"
+    # -- Pass-through to valkey-helm: extra inline ACL config appended after `aclUsers`.
+    aclConfig: ""
+
+  # Redis Cluster configuration
+  cluster:
+    # -- Set to `true` to enable Redis Cluster mode. When enabled, you must set `redis.deploy` to `false` and provide cluster nodes.
+    enabled: false
+    # -- List of Redis cluster nodes in the format "host:port". Example: ["redis-1:6379", "redis-2:6379", "redis-3:6379"]
+    nodes: []
+
+  # Redis Sentinel configuration
+  sentinel:
+    # -- Set to `true` to enable Redis Sentinel mode. Cannot be enabled simultaneously with cluster mode. When enabled, you must set `redis.deploy` to `false`.
+    enabled: false
+    # -- Name of the Redis Sentinel master. Required when `redis.sentinel.enabled` is `true`.
+    masterName: ""
+    # -- Comma-separated list of Redis Sentinel nodes in the format "host:port". Example: "sentinel-1:26379,sentinel-2:26379,sentinel-3:26379". Required when `redis.sentinel.enabled` is `true`.
+    nodes: ""
+    # -- Username for Redis Sentinel authentication (optional).
+    username: ""
+    # -- Password for Redis Sentinel authentication (optional).
+    password: ""
+    # -- If you want to use an existing secret for the sentinel password, set the name of the secret here. (`redis.sentinel.password` will be ignored and picked up from this secret).
+    existingSecret: ""
+    # -- The key in the existing secret that contains the sentinel password.
+    existingSecretPasswordKey: ""
+
+  # Sub-chart settings (valkey-io/valkey) — passed through to the sub-chart.
+  # See https://github.com/valkey-io/valkey-helm for the full schema.
+  image:
+    registry: docker.io
+    repository: valkey/valkey
+    tag: "8.0"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    # -- Port the primary Valkey Service exposes.
+    port: 6379
+
+  # -- Valkey replication. Default standalone; set enabled and replicas for primary/replica (Litefuse always targets the primary).
+  replica:
+    enabled: false
+    replicas: 0
+    persistence:
+      size: 8Gi
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 6379
+
+  # -- Persistence for the primary node.
+  dataStorage:
+    enabled: true
+    requestedSize: 8Gi
+    className: ""
+    accessModes:
+      - ReadWriteOnce
+    keepPvc: false
+
+  # -- Pass-through to valkey-helm: contents of valkey.conf. This is the sub-chart's only config mechanism (it consumes no command-line flag values). Litefuse requires `maxmemory-policy noeviction` to avoid losing job data — validated at render time.
+  valkeyConfig: |
+    maxmemory-policy noeviction
+
+  # -- Resource limits/requests for the Valkey pods.
+  resources: {}
+
+  podSecurityContext:
+    fsGroup: 1000
+    runAsUser: 1000
+    runAsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+
+  metrics:
+    # -- Enable the bundled Valkey Prometheus exporter sidecar.
+    enabled: false
+
+# Apache Doris Configuration
+# Deploys a Doris FE/BE cluster via the SelectDB Doris Operator (DorisCluster
+# CR, apiVersion doris.selectdb.com/v1). The operator itself ships as the
+# bundled dorisOperator dependency; disable it if the operator is already
+# installed cluster-wide.
+doris:
+  # -- Deploy Doris (DorisCluster CR) via the Doris Operator. Disable to use an external or managed Doris.
+  deploy: true
+
+  # Doris Operator sub-chart (selectdb/doris-operator)
+  operator:
+    # -- Install the Doris Operator as a dependency. Set to false if the operator is already installed in the cluster.
+    enabled: true
+
+  # -- Require the Doris Operator CRD when deploy is true. Disable for offline helm template/GitOps diffs (or pass `--api-versions doris.selectdb.com/v1/DorisCluster`).
+  crdCheck: true
+
+  # -- Doris FE host litefuse connects to (MySQL protocol + HTTP). Auto-set to the operator-managed FE Service when deploy is true; set explicitly for an external Doris.
+  host: ""
+  # -- Full FE HTTP URL override (e.g. "http://my-fe:8080"). Takes precedence over host/httpPort — use for managed Doris where the HTTP endpoint differs.
+  feHttpUrl: ""
+  # -- FE HTTP port (Web UI, Stream Load routing, migrations).
+  httpPort: 8030
+  # -- FE MySQL-protocol query port.
+  queryPort: 9030
+  # -- Doris database name litefuse stores analytics data in.
+  database: litefuse
+
+  # Authentication configuration (litefuse-facing — builds DORIS_USER / DORIS_PASSWORD).
+  auth:
+    # -- Username litefuse uses to authenticate to Doris. The bundled cluster only provisions root.
+    username: root
+    # -- Password litefuse uses to authenticate to Doris. The bundled cluster starts with an empty root password.
+    password: ""
+    # -- Existing Secret holding the Doris password. When set, auth.password is ignored.
+    existingSecret: ""
+    # -- Key within existingSecret that contains the Doris password.
+    existingSecretKey: ""
+
+  # -- Max MySQL-protocol connections litefuse opens per pod (DORIS_MAX_OPEN_CONNECTIONS).
+  maxOpenConnections: 100
+  # -- Socket-idle timeout for Doris HTTP requests in ms (DORIS_REQUEST_TIMEOUT_MS). This is per-read inactivity, not total request duration — Stream Load has healthy quiet phases.
+  requestTimeoutMs: 30000
+  # -- Replication factor for tables the migration runner creates (DORIS_REPLICATION_NUM). Leave null to derive it: bundled cluster -> min(3, be.replicas); external -> 3.
+  replicationNum: null
+  # -- Storage page size hint used by the app when sizing reads (LITEFUSE_STORAGE_PAGE_SIZE).
+  storagePageSize: 262144
+
+  # Migration configuration
+  migration:
+    # -- Run Doris schema migrations automatically when litefuse starts.
+    autoMigrate: true
+
+  # DorisCluster specification (rendered as the DorisCluster CR by this chart)
+  cluster:
+    # -- Let the operator roll FE/BE pods automatically when fe.conf/be.conf
+    # ConfigMap content changes (spec.enableRestartWhenConfigChange).
+    enableRestartWhenConfigChange: true
+    fe:
+      # -- Number of FE replicas. Use 3 for a production HA quorum.
+      replicas: 1
+      # -- Doris FE image. Keep the fe-/be- tags in lockstep.
+      image: apache/doris:fe-4.0.6
+      resources:
+        requests:
+          cpu: 2
+          memory: 4Gi
+        limits:
+          cpu: 4
+          memory: 8Gi
+      # -- FE JVM heap size in MB (-Xmx/-Xms). MUST leave headroom below the
+      # container memory limit (heap + ~2Gi native/metaspace) or the pod gets
+      # OOMKilled: the image default is a fixed 8192m, which overruns any limit
+      # <= 8Gi. Set null to keep the image default (only safe with limits >= 12Gi).
+      jvmHeapMb: 4096
+      service:
+        type: ClusterIP
+      # -- Node selector for FE pods.
+      nodeSelector: {}
+      # -- Tolerations for FE pods.
+      tolerations: []
+      # -- Affinity rules for FE pods.
+      affinity: {}
+      # -- Extra FE settings appended to the chart-managed fe.conf (merged into
+      # the main file so the operator's config-change auto-restart hash covers
+      # them). Defaults carry the settings the docker-compose deployment runs
+      # with (there they lived in fe_custom.conf).
+      config: |
+        # Disable backend blacklist to prevent BE nodes from being marked as
+        # unavailable on temporary connection issues.
+        disable_backend_black_list = true
+
+        # --- Ingestion exactly-once label protection ---
+        # Stream load labels are retained by THIS knob (not
+        # label_keep_max_second); default 43200 (12h) is shorter than the DLQ
+        # age guard (3d) and would strip label protection from redrives older
+        # than 12h.
+        streaming_label_keep_max_second = 259200
+        # Count-bounded label registry (default 2000) evicts labels after
+        # ~15min under load. Size: total txn rate x 3d x 1.5 margin. Costs FE
+        # heap (~0.5-1GB at 1M) — keep JVM -Xmx headroom in mind.
+        label_num_threshold = 1000000
+
+        # --- Auto Bucket floor for AUTO PARTITION split tables ---
+        # Split tables use AUTO PARTITION + BUCKETS AUTO: each day partition
+        # is created on write, starting empty, so Auto Bucket would estimate
+        # 1 bucket for that first tiny load. This floor keeps every
+        # auto-created partition at >= 10 buckets.
+        autobucket_min_buckets = 10
+
+    be:
+      # -- Number of BE replicas. 3+ recommended for production (allows replicationNum 3).
+      replicas: 1
+      # -- Doris BE image. Keep the fe-/be- tags in lockstep.
+      image: apache/doris:be-4.0.6
+      resources:
+        requests:
+          cpu: 4
+          memory: 8Gi
+        limits:
+          cpu: 8
+          memory: 16Gi
+      service:
+        type: ClusterIP
+      # -- Node selector for BE pods.
+      nodeSelector: {}
+      # -- Tolerations for BE pods.
+      tolerations: []
+      # -- Affinity rules for BE pods.
+      affinity: {}
+      # -- Extra BE settings appended to the chart-managed be.conf (merged into
+      # the main file so the operator's config-change auto-restart hash covers
+      # them).
+      config: |
+        # --- Ingestion exactly-once ledger load headroom ---
+        # blob_storage_file_log / traces_scalar are tiny high-frequency stream
+        # loads: versions concentrate on few tablets and hit the default 2000
+        # cap (E-235) whenever compaction lags, failing group jobs
+        # mid-pipeline.
+        max_tablet_version_num = 5000
+
+    persistence:
+      # -- Persist FE metadata and BE storage via PVCs. Disable only for throwaway test installs.
+      enabled: true
+      # -- StorageClass for Doris PVCs. Leave empty to use the cluster default.
+      storageClass: ""
+      fe:
+        # -- Persistent volume size for each FE pod (doris-meta).
+        size: 20Gi
+      be:
+        # -- Persistent volume size for each BE pod (storage). Size for expected trace volume.
+        size: 200Gi
+
+# S3 / Object Storage Configuration
+# Deploys SeaweedFS in allInOne mode via the seaweedfs/seaweedfs sub-chart (image `chrislusf/seaweedfs`).
+# For production, set `s3.deploy: false` and point Litefuse at S3 / Azure Blob / GCS.
+s3:
+  # -- Deploy SeaweedFS via the bundled seaweedfs sub-chart. Disable to use external S3-compatible storage.
+  deploy: true
+
+  # -- Object storage provider for Litefuse uploads: s3 (default), azure, or gcs.
+  storageProvider: "s3"
+
+  # -- Default S3 bucket for uploads (overridable per upload type). Auto-created on SeaweedFS when deploy is true.
+  bucket: "litefuse"
+  # -- S3 region for uploads (overridable per upload type).
+  region: "auto"
+  # -- S3 endpoint for uploads (overridable per upload type). Auto-set to the SeaweedFS Service when deploy is true.
+  endpoint: ""
+  # -- Whether to force path style on requests. Required for SeaweedFS / MinIO. Can be overridden per upload type.
+  forcePathStyle: true
+  # -- S3 accessKeyId to use for all uploads. Can be overridden per upload type.
+  accessKeyId:
+    value: ""
+    secretKeyRef:
+      name: ""
+      key: ""
+  # -- S3 secretAccessKey to use for all uploads. Can be overridden per upload type.
+  secretAccessKey:
+    value: ""
+    secretKeyRef:
+      name: ""
+      key: ""
+
+  # Google Cloud Storage Configuration (only used when storageProvider is 'gcs')
+  gcs:
+    # -- GCS credentials JSON (or secretKeyRef). Falls back to the pod's environment/service account credentials if unset.
+    credentials:
+      value: ""
+      secretKeyRef:
+        name: ""
+        key: ""
+
+  # S3 Concurrency Configuration
+  concurrency:
+    # -- Maximum number of concurrent read operations to S3. Defaults to 50.
+    reads: 50
+    # -- Maximum number of concurrent write operations to S3. Defaults to 50.
+    writes: 50
+
+  # Event Upload Configuration
+  eventUpload:
+    # -- S3 bucket to use for event uploads.
+    bucket: ""
+    # -- Prefix to use for event uploads within the bucket.
+    prefix: "events/"
+    # -- S3 region to use for event uploads.
+    region: ""
+    # -- S3 endpoint to use for event uploads.
+    endpoint: ""
+    # -- Whether to force path style on requests. Required for SeaweedFS / MinIO.
+    forcePathStyle: Null
+    # -- S3 accessKeyId to use for event uploads.
+    accessKeyId:
+      value: ""
+      secretKeyRef:
+        name: ""
+        key: ""
+    # -- S3 secretAccessKey to use for event uploads.
+    secretAccessKey:
+      value: ""
+      secretKeyRef:
+        name: ""
+        key: ""
+
+  # Batch Export Configuration
+  batchExport:
+    # -- Enable batch export.
+    enabled: false
+    # -- S3 bucket to use for batch exports.
+    bucket: ""
+    # -- Prefix to use for batch exports within the bucket.
+    prefix: "exports/"
+    # -- S3 region to use for batch exports.
+    region: ""
+    # -- S3 endpoint to use for batch exports.
+    endpoint: ""
+    # -- Whether to force path style on requests. Required for SeaweedFS / MinIO.
+    forcePathStyle: Null
+    # -- S3 accessKeyId to use for batch exports.
+    accessKeyId:
+      value: ""
+      secretKeyRef:
+        name: ""
+        key: ""
+    # -- S3 secretAccessKey to use for batch exports.
+    secretAccessKey:
+      value: ""
+      secretKeyRef:
+        name: ""
+        key: ""
+
+  # Media Upload Configuration
+  mediaUpload:
+    # -- Enable media uploads.
+    enabled: true
+    # -- S3 bucket to use for media uploads.
+    bucket: ""
+    # -- Prefix to use for media uploads within the bucket.
+    prefix: "media/"
+    # -- S3 region to use for media uploads.
+    region: ""
+    # -- S3 endpoint to use for media uploads.
+    endpoint: ""
+    # -- Whether to force path style on requests. Required for SeaweedFS / MinIO.
+    forcePathStyle: Null
+    # -- S3 accessKeyId to use for media uploads.
+    accessKeyId:
+      value: ""
+      secretKeyRef:
+        name: ""
+        key: ""
+    # -- S3 secretAccessKey to use for media uploads.
+    secretAccessKey:
+      value: ""
+      secretKeyRef:
+        name: ""
+        key: ""
+    # -- Maximum content length for media uploads. Defaults to 1GB.
+    maxContentLength: 1000000000
+    # -- Expiry time for download URLs. Defaults to 1 hour.
+    downloadUrlExpirySeconds: 3600
+
+  # Authentication for the bundled SeaweedFS S3 gateway. The chart wires these credentials
+  # into both Litefuse (as LITEFUSE_S3_*_ACCESS_KEY_ID / *_SECRET_ACCESS_KEY) and into a
+  # generated SeaweedFS IAM config Secret consumed by the allInOne pod.
+  auth:
+    # -- Access key ID Litefuse uses to authenticate against the SeaweedFS S3 gateway.
+    rootUser: "litefuse"
+    # -- S3 secret access key Litefuse uses against the SeaweedFS gateway. Leave empty to have the chart generate one.
+    rootPassword: ""
+    # -- Existing Secret for S3 access/secret keys (via rootUserSecretKey / rootPasswordSecretKey).
+    existingSecret: ""
+    # -- Key in the existing secret that contains the S3 access key ID.
+    rootUserSecretKey: ""
+    # -- Key in the existing secret that contains the S3 secret access key.
+    rootPasswordSecretKey: ""
+
+  # -- Legacy default bucket list; first entry is used when neither s3.bucket nor a per-upload bucket is set.
+  defaultBuckets: "litefuse"
+
+  # Sub-chart settings (seaweedfs/seaweedfs). In allInOne mode, master/volume/filer/s3 are disabled in favor of one combined pod.
+  master:
+    enabled: false
+  volume:
+    enabled: false
+  filer:
+    enabled: false
+  s3:
+    enabled: false
+
+  allInOne:
+    enabled: true
+    image:
+      registry: docker.io
+      repository: chrislusf/seaweedfs
+      tag: "3.95"
+      pullPolicy: IfNotPresent
+    s3:
+      enabled: true
+      port: 8333
+      enableAuth: true
+      # -- SeaweedFS IAM config Secret. Single source of truth for the chart-managed Secret's name — the chart creates the Secret (from s3.auth) under this exact name, so any release name works. Override when running two releases in one namespace.
+      existingConfigSecret: "litefuse-s3-auth"
+      # -- Buckets to create by the SeaweedFS post-install/post-upgrade hook. Must include every bucket Litefuse uses (`s3.bucket` and any per-upload-type overrides) — validated at render time.
+      createBuckets:
+        - name: litefuse
+      createBucketsHook:
+        resources: {}
+    data:
+      # -- Persistence for the SeaweedFS data directory.
+      type: persistentVolumeClaim
+      size: 50Gi
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+    service:
+      type: ClusterIP
+      internalTrafficPolicy: Cluster
+    resources:
+      limits:
+        cpu: 2
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+
+# Doris Operator sub-chart pass-through (dependency alias dorisOperator; the
+# sub-chart nests its own values under another dorisOperator key). Pin the
+# operator image instead of the sub-chart's floating operator-latest default.
+dorisOperator:
+  dorisOperator:
+    image:
+      repository: apache/doris
+      tag: "operator-25.8.0"
+      imagePullPolicy: "IfNotPresent"
+
+# Additional manifests
+extraManifests: []

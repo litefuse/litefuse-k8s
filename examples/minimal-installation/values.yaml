@@ -1,0 +1,53 @@
+# This values.yaml file demonstrates how to use the basic chart with a single, pre-created secret.
+# Secrets must be set manually or via External Secrets Operator like https://external-secrets.io/latest
+# or any other secret management tool.
+#
+# Apply secret.yaml before installing. The same Secret feeds Litefuse and the bundled
+# Postgres / Valkey / SeaweedFS deployments. The bundled Doris cluster runs with the
+# built-in root user (empty password) — set doris.auth.existingSecret only when
+# connecting to an external, password-protected Doris.
+litefuse:
+  encryptionKey:
+    secretKeyRef:
+      name: litefuse
+      key: encryption-key
+
+  salt:
+    secretKeyRef:
+      name: litefuse
+      key: salt
+
+  nextauth:
+    secret:
+      secretKeyRef:
+        name: litefuse
+        key: nextauth-secret
+
+postgresql:
+  auth:
+    existingSecret: litefuse
+    secretKeys:
+      adminPasswordKey: postgresql-password
+      userPasswordKey: postgresql-password
+  # groundhog2k reads these keys from the same Secret (see secret.yaml)
+  settings:
+    existingSecret: litefuse
+  userDatabase:
+    existingSecret: litefuse
+
+redis:
+  auth:
+    existingSecret: litefuse
+    existingSecretPasswordKey: redis-password
+    # Valkey ACL Secret (key name == username, see secret.yaml `default`)
+    usersExistingSecret: litefuse
+
+s3:
+  auth:
+    existingSecret: litefuse
+    rootUserSecretKey: s3-user
+    rootPasswordSecretKey: s3-password
+  allInOne:
+    s3:
+      # SeaweedFS IAM config JSON lives under key `seaweedfs_s3_config` in secret.yaml
+      existingConfigSecret: litefuse
